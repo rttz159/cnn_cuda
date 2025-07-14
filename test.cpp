@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include "mlp.h"
+#include "activation_utils.h"
 
 using namespace std;
 

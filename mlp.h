@@ -1,23 +1,9 @@
 #pragma once
 #include "Tensor.h"
+#include "activation_utils.h"
 #include <vector>
 #include <cmath>
 #include <iostream>
-
-enum class ActivationFunction
-{
-    ReLU,
-    Sigmoid,
-    Tanh,
-    Softmax,
-    None
-};
-
-enum class LossFunction
-{
-    MSE,
-    CrossEntropy
-};
 
 class MultiLayerPerceptron
 {
@@ -53,6 +39,8 @@ public:
 
     void forward();
     void backward();
+    void forward_cuda();
+    void backward_cuda();
 
     void set_input(const std::vector<std::vector<float>>& input_batch);
     void set_desire_output(const std::vector<std::vector<float>>& output_batch);
@@ -70,29 +58,4 @@ private:
     void initialize_deltas();
     void initialize_weights_and_biases();
     void initialize_input_output();
-
-    static Tensor<float, 2> relu(const Tensor<float, 2>& x);
-    static Tensor<float, 2> sigmoid(const Tensor<float, 2>& x);
-    static Tensor<float, 2> tanh_act(const Tensor<float, 2>& x);
-    static Tensor<float, 2> softmax(const Tensor<float, 2>& x);
-    static Tensor<float, 2> apply_activation(const Tensor<float, 2>& x, ActivationFunction func);
-
-    static float mean_squared_error(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target);
-    static float cross_entropy_loss(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target);
-    static float compute_loss(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target,
-        LossFunction loss_func);
-
-    static Tensor<float, 2> relu_derivative(const Tensor<float, 2>& x);
-    static Tensor<float, 2> sigmoid_derivative(const Tensor<float, 2>& x);
-    static Tensor<float, 2> tanh_derivative(const Tensor<float, 2>& x);
-    static Tensor<float, 2> mse_derivative(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target);
-    static Tensor<float, 2> softmax_cross_entropy_derivative(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target);
-    static Tensor<float, 2> activation_derivative(const Tensor<float, 2>& pre_activation,
-        ActivationFunction func);
-    static Tensor<float, 2> loss_derivative(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target,
-        LossFunction loss_func,
-        ActivationFunction output_activation);
 };

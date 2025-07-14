@@ -81,8 +81,14 @@
     <ClCompile Include="test.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="activation_utils.h" />
+    <ClInclude Include="layers.h" />
     <ClInclude Include="mlp.h" />
     <ClInclude Include="tensor.h" />
+    <ClInclude Include="cuda_tensor.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="cuda_tensor.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

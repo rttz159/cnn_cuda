@@ -61,7 +61,7 @@ void MultiLayerPerceptron::forward()
 
         pre_activations[i] = z + biases[i].broadcast_to_rows(batch_size);
 
-        activations[i] = apply_activation(pre_activations[i], activation_functions[i]);
+        activations[i] = Activation::apply_activation(pre_activations[i], activation_functions[i]);
 
         current_activation = activations[i];
     }
@@ -71,7 +71,7 @@ void MultiLayerPerceptron::backward()
 {
 
     // Calculate delta for the output layer
-    deltas.back() = loss_derivative(activations.back(), desire_output, lossfunction, activation_functions[layer_sizes.size() - 1]);
+    deltas.back() = Activation::loss_derivative(activations.back(), desire_output, lossfunction, activation_functions[layer_sizes.size() - 1]);
 
     // Backpropagate deltas through hidden layers
     for (int i = static_cast<int>(layer_sizes.size() - 3); i >= 0; i--)
@@ -85,7 +85,7 @@ void MultiLayerPerceptron::backward()
         
         // Calculate delta for current layer
         Tensor<float, 2> error_prop = Tensor<float, 2>::matmul(next_delta, next_weight);
-        Tensor<float, 2> act_deriv = activation_derivative(pre_activations[i], activation_functions[i]);
+        Tensor<float, 2> act_deriv = Activation::activation_derivative(pre_activations[i], activation_functions[i]);
 
         deltas[i] = error_prop * act_deriv;
     }
@@ -263,208 +263,4 @@ void MultiLayerPerceptron::initialize_input_output()
 {
     input = Tensor<float, 2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0]) });
     desire_output = Tensor<float, 2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes.back()) });
-}
-
-Tensor<float, 2> MultiLayerPerceptron::relu(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> result(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            result(i, j) = std::max(0.0f, x(i, j));
-    return result;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::sigmoid(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> result(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            result(i, j) = 1.0f / (1.0f + std::exp(-x(i, j)));
-    return result;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::tanh_act(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> result(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            result(i, j) = std::tanh(x(i, j));
-    return result;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::softmax(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> result(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-    {
-        float max_val = x(i, 0);
-        for (size_t j = 1; j < shape[1]; ++j)
-            max_val = std::max(max_val, x(i, j));
-
-        float sum = 0.0f;
-        for (size_t j = 0; j < shape[1]; ++j)
-        {
-            result(i, j) = std::exp(x(i, j) - max_val);
-            sum += result(i, j);
-        }
-
-        for (size_t j = 0; j < shape[1]; ++j)
-            result(i, j) /= sum;
-    }
-    return result;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::apply_activation(const Tensor<float, 2>& x, ActivationFunction func)
-{
-    switch (func)
-    {
-    case ActivationFunction::ReLU:
-        return relu(x);
-    case ActivationFunction::Sigmoid:
-        return sigmoid(x);
-    case ActivationFunction::Tanh:
-        return tanh_act(x);
-    case ActivationFunction::Softmax:
-        return softmax(x);
-    case ActivationFunction::None:
-        return x;
-    }
-    return x;
-}
-
-float MultiLayerPerceptron::mean_squared_error(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
-{
-    auto shape = prediction.get_shape();
-    float sum = 0.0f;
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-        {
-            float diff = prediction(i, j) - target(i, j);
-            sum += diff * diff;
-        }
-    return sum / (shape[0] * shape[1]);
-}
-
-float MultiLayerPerceptron::cross_entropy_loss(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
-{
-    auto shape = prediction.get_shape();
-    float loss = 0.0f;
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-        {
-            float p = prediction(i, j);
-            float t = target(i, j);
-            loss -= t * std::log(std::max(p, 1e-9f));
-        }
-    return loss / shape[0];
-}
-
-float MultiLayerPerceptron::compute_loss(const Tensor<float, 2>& prediction,
-    const Tensor<float, 2>& target,
-    LossFunction loss_func)
-{
-    switch (loss_func)
-    {
-    case LossFunction::MSE:
-        return mean_squared_error(prediction, target);
-    case LossFunction::CrossEntropy:
-        return cross_entropy_loss(prediction, target);
-    }
-    return 0.0f;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::relu_derivative(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> grad(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            grad(i, j) = x(i, j) > 0.0f ? 1.0f : 0.0f;
-    return grad;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::sigmoid_derivative(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> grad(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-        {
-            float s = 1.0f / (1.0f + std::exp(-x(i, j)));
-            grad(i, j) = s * (1.0f - s);
-        }
-    return grad;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::tanh_derivative(const Tensor<float, 2>& x)
-{
-    auto shape = x.get_shape();
-    Tensor<float, 2> grad(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-        {
-            float t = std::tanh(x(i, j));
-            grad(i, j) = 1.0f - t * t;
-        }
-    return grad;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::mse_derivative(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
-{
-    auto shape = prediction.get_shape();
-    Tensor<float, 2> grad(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            grad(i, j) = 2.0f * (prediction(i, j) - target(i, j)) / (shape[0] * shape[1]);
-    return grad;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::softmax_cross_entropy_derivative(const Tensor<float, 2>& prediction,
-    const Tensor<float, 2>& target)
-{
-    auto shape = prediction.get_shape();
-    Tensor<float, 2> grad(shape);
-    for (size_t i = 0; i < shape[0]; ++i)
-        for (size_t j = 0; j < shape[1]; ++j)
-            grad(i, j) = (prediction(i, j) - target(i, j)) / shape[0];
-    return grad;
-}
-
-Tensor<float, 2> MultiLayerPerceptron::activation_derivative(const Tensor<float, 2>& pre_activation,
-    ActivationFunction func)
-{
-    switch (func)
-    {
-    case ActivationFunction::ReLU:
-        return relu_derivative(pre_activation);
-    case ActivationFunction::Sigmoid:
-        return sigmoid_derivative(pre_activation);
-    case ActivationFunction::Tanh:
-        return tanh_derivative(pre_activation);
-    case ActivationFunction::Softmax:
-        return Tensor<float, 2>(pre_activation.get_shape());
-    case ActivationFunction::None:
-        return Tensor<float, 2>(pre_activation.get_shape());
-    }
-    return Tensor<float, 2>(pre_activation.get_shape());
-}
-
-Tensor<float, 2> MultiLayerPerceptron::loss_derivative(const Tensor<float, 2>& prediction,
-    const Tensor<float, 2>& target,
-    LossFunction loss_func,
-    ActivationFunction output_activation)
-{
-    if (loss_func == LossFunction::CrossEntropy && output_activation == ActivationFunction::Softmax)
-    {
-        return softmax_cross_entropy_derivative(prediction, target);
-    }
-    else if (loss_func == LossFunction::MSE)
-    {
-        return mse_derivative(prediction, target);
-    }
-    return Tensor<float, 2>(prediction.get_shape());
 }
