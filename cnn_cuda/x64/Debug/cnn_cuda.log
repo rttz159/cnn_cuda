@@ -1,0 +1,14 @@
+﻿  mlp.cpp
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(112,52): warning C4244: 'argument': conversion from 'double' to 'T', possible loss of data
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(112,52): warning C4244:         with
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(112,52): warning C4244:         [
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(112,52): warning C4244:             T=float
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(112,52): warning C4244:         ]
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(113,50): warning C4244: 'argument': conversion from 'double' to 'T', possible loss of data
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(113,50): warning C4244:         with
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(113,50): warning C4244:         [
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(113,50): warning C4244:             T=float
+C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\mlp.cpp(113,50): warning C4244:         ]
+  test.cpp
+  Generating Code...
+  cnn_cuda.vcxproj -> C:\Users\USER\Study\Y2S3\Parallel and Distributed System\cnn_vs\cnn_cuda\x64\Debug\cnn_cuda.exe
