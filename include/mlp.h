@@ -15,14 +15,14 @@ public:
     std::vector<int> layer_sizes;
     std::vector<ActivationFunction> activation_functions;
 
-    Tensor<float, 2> input;
-    Tensor<float, 2> desire_output;
+    Tensor<2> input;
+    Tensor<2> desire_output;
 
-    std::vector<Tensor<float, 2>> weight;
-    std::vector<Tensor<float, 2>> biases;
-    std::vector<Tensor<float, 2>> activations;
-    std::vector<Tensor<float, 2>> pre_activations;
-    std::vector<Tensor<float, 2>> deltas;
+    std::vector<Tensor<2>> weight;
+    std::vector<Tensor<2>> biases;
+    std::vector<Tensor<2>> activations;
+    std::vector<Tensor<2>> pre_activations;
+    std::vector<Tensor<2>> deltas;
 
     MultiLayerPerceptron(std::vector<int> layers_size, std::vector<ActivationFunction> activation_functions, LossFunction lossfunction, double learning_rate, int batch_size)
     {

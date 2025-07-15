@@ -6,12 +6,12 @@
 #include <stdexcept>
 #include <cmath>
 
-template <typename T, size_t N>
+template <size_t N>
 class Tensor
 {
     /*
         Example usage:
-            Tensor<float, 4> tensor({2, 3, 4, 5});
+            Tensor<4> tensor({2, 3, 4, 5});
 
         The indicies is passed in with the fastest changing indicies or the lowest rank in the last.
         For example:
@@ -27,7 +27,7 @@ public:
         strides.fill(0);
     }
 
-    Tensor(const std::array<size_t, N>& shape) : shape(shape)
+    Tensor(const std::array<size_t, N> &shape) : shape(shape)
     {
         compute_strides();
         size_t total_size = 1;
@@ -36,7 +36,7 @@ public:
         data.resize(total_size);
     }
 
-    Tensor(const std::array<size_t, N>& shape, const std::vector<T>& values) : shape(shape)
+    Tensor(const std::array<size_t, N> &shape, const std::vector<float> &values) : shape(shape)
     {
         compute_strides();
         size_t total_size = 1;
@@ -50,7 +50,7 @@ public:
     }
 
     // Compute flat index
-    size_t index(const std::array<size_t, N>& indices) const
+    size_t index(const std::array<size_t, N> &indices) const
     {
         size_t idx = 0;
         for (size_t i = 0; i < N; ++i)
@@ -68,22 +68,22 @@ public:
 
     // Variadic operator()
     template <typename... Args>
-    T& operator()(Args... args)
+    float &operator()(Args... args)
     {
         static_assert(sizeof...(args) == N, "Number of indices must match tensor rank");
-        std::array<size_t, N> indices = { static_cast<size_t>(args)... };
+        std::array<size_t, N> indices = {static_cast<size_t>(args)...};
         return data[index(indices)];
     }
 
     template <typename... Args>
-    const T& operator()(Args... args) const
+    const float &operator()(Args... args) const
     {
         static_assert(sizeof...(args) == N, "Number of indices must match tensor rank");
-        std::array<size_t, N> indices = { static_cast<size_t>(args)... };
+        std::array<size_t, N> indices = {static_cast<size_t>(args)...};
         return data[index(indices)];
     }
 
-    Tensor<T, N>& operator=(const Tensor<T, N>& other)
+    Tensor<N> &operator=(const Tensor<N> &other)
     {
         if (this != &other)
         {
@@ -94,14 +94,19 @@ public:
         return *this;
     }
 
-    const std::array<size_t, N>& get_shape() const
+    const std::array<size_t, N> &get_shape() const
     {
         return shape;
     }
 
-    const std::vector<T>& raw_data() const
+    std::vector<float> &raw_data()
     {
         return data;
+    }
+
+    float *raw_data_arr()
+    {
+        return data.data();
     }
 
     size_t size() const
@@ -110,7 +115,7 @@ public:
     }
 
     // Matrix Multiplication for rank 2 tensor
-    static Tensor<T, 2> matmul(const Tensor<T, 2>& A, const Tensor<T, 2>& B)
+    static Tensor<2> matmul(const Tensor<2> &A, const Tensor<2> &B)
     {
         auto a_shape = A.get_shape();
         auto b_shape = B.get_shape();
@@ -123,11 +128,11 @@ public:
         if (K != K2)
             throw std::invalid_argument("Incompatible matrix dimensions");
 
-        Tensor<T, 2> result({ M, N_ });
+        Tensor<2> result({M, N_});
         for (size_t i = 0; i < M; ++i)
             for (size_t j = 0; j < N_; ++j)
             {
-                T sum = 0;
+                float sum = 0;
                 for (size_t k = 0; k < K; ++k)
                     sum += A(i, k) * B(k, j);
                 result(i, j) = sum;
@@ -136,36 +141,36 @@ public:
         return result;
     }
 
-    static Tensor<T, 2> transpose(const Tensor<T, 2>& mat)
+    static Tensor<2> transpose(const Tensor<2> &mat)
     {
         auto shape = mat.get_shape();
-        Tensor<T, 2> result({ shape[1], shape[0] });
+        Tensor<2> result({shape[1], shape[0]});
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 result(j, i) = mat(i, j);
         return result;
     }
 
-    Tensor<T, 2> add_bias_column() const
+    Tensor<2> add_bias_column() const
     {
         static_assert(N == 2, "add_bias_column() is only supported for 2D tensors");
 
         size_t rows = shape[0];
         size_t cols = shape[1];
 
-        Tensor<T, 2> result({ rows, cols + 1 });
+        Tensor<2> result({rows, cols + 1});
         for (size_t i = 0; i < rows; ++i)
         {
             for (size_t j = 0; j < cols; ++j)
             {
                 result(i, j) = (*this)(i, j);
             }
-            result(i, cols) = static_cast<T>(1.0);
+            result(i, cols) = static_cast<float>(1.0);
         }
         return result;
     }
 
-    Tensor<T, 2> remove_bias_column() const
+    Tensor<2> remove_bias_column() const
     {
         static_assert(N == 2, "remove_bias_column() is only supported for 2D tensors");
 
@@ -175,7 +180,7 @@ public:
         if (cols < 2)
             throw std::invalid_argument("Cannot remove bias column from tensor with less than 2 columns");
 
-        Tensor<T, 2> result({ rows, cols - 1 });
+        Tensor<2> result({rows, cols - 1});
         for (size_t i = 0; i < rows; ++i)
             for (size_t j = 0; j < cols - 1; ++j)
                 result(i, j) = (*this)(i, j);
@@ -184,12 +189,12 @@ public:
     }
 
     // Element-wise multiplication
-    Tensor<T, N> operator*(const Tensor<T, N>& other) const
+    Tensor<N> operator*(const Tensor<N> &other) const
     {
         if (shape != other.shape)
             throw std::invalid_argument("Tensors must have the same shape for element-wise multiplication");
 
-        Tensor<T, N> result(shape);
+        Tensor<N> result(shape);
         for (size_t i = 0; i < data.size(); ++i)
         {
             result.data[i] = data[i] * other.data[i];
@@ -198,9 +203,9 @@ public:
     }
 
     // Scalar multiplication
-    Tensor<T, N> operator*(T scalar) const
+    Tensor<N> operator*(float scalar) const
     {
-        Tensor<T, N> result(shape);
+        Tensor<N> result(shape);
         for (size_t i = 0; i < data.size(); ++i)
         {
             result.data[i] = data[i] * scalar;
@@ -209,12 +214,12 @@ public:
     }
 
     // Tensor subtraction (for weight updates)
-    Tensor<T, N> operator-(const Tensor<T, N>& other) const
+    Tensor<N> operator-(const Tensor<N> &other) const
     {
         if (shape != other.shape)
             throw std::invalid_argument("Tensors must have the same shape for subtraction");
 
-        Tensor<T, N> result(shape);
+        Tensor<N> result(shape);
         for (size_t i = 0; i < data.size(); ++i)
         {
             result.data[i] = data[i] - other.data[i];
@@ -223,7 +228,7 @@ public:
     }
 
     // Broadcast a 1-row tensor to multiple rows (for bias expansion)
-    Tensor<T, 2> broadcast_to_rows(size_t num_rows) const
+    Tensor<2> broadcast_to_rows(size_t num_rows) const
     {
         static_assert(N == 2, "broadcast_to_rows() is only supported for 2D tensors (row vectors)");
         if (shape[0] != 1)
@@ -231,7 +236,7 @@ public:
             throw std::invalid_argument("broadcast_to_rows() expects a 1-row tensor.");
         }
         size_t cols = shape[1];
-        Tensor<T, 2> result({ num_rows, cols });
+        Tensor<2> result({num_rows, cols});
         for (size_t r = 0; r < num_rows; ++r)
         {
             for (size_t c = 0; c < cols; ++c)
@@ -243,12 +248,12 @@ public:
     }
 
     // Tensor addition
-    Tensor<T, N> operator+(const Tensor<T, N>& other) const
+    Tensor<N> operator+(const Tensor<N> &other) const
     {
         if (shape != other.shape)
             throw std::invalid_argument("Tensors must have the same shape for addition");
 
-        Tensor<T, N> result(shape);
+        Tensor<N> result(shape);
         for (size_t i = 0; i < data.size(); ++i)
         {
             result.data[i] = data[i] + other.data[i];
@@ -259,7 +264,7 @@ public:
 private:
     std::array<size_t, N> shape;
     std::array<size_t, N> strides;
-    std::vector<T> data;
+    std::vector<float> data;
 
     // Compute strides for row-major layout
     void compute_strides()

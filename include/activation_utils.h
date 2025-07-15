@@ -18,40 +18,40 @@ enum class LossFunction
 
 namespace Activation {
 
-    inline Tensor<float, 2> relu(const Tensor<float, 2>& x)
+    inline Tensor<2> relu(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> result(shape);
+        Tensor<2> result(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 result(i, j) = std::max(0.0f, x(i, j));
         return result;
     }
 
-    inline Tensor<float, 2> sigmoid(const Tensor<float, 2>& x)
+    inline Tensor<2> sigmoid(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> result(shape);
+        Tensor<2> result(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 result(i, j) = 1.0f / (1.0f + std::exp(-x(i, j)));
         return result;
     }
 
-    inline Tensor<float, 2> tanh_act(const Tensor<float, 2>& x)
+    inline Tensor<2> tanh_act(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> result(shape);
+        Tensor<2> result(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 result(i, j) = std::tanh(x(i, j));
         return result;
     }
 
-    inline Tensor<float, 2> softmax(const Tensor<float, 2>& x)
+    inline Tensor<2> softmax(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> result(shape);
+        Tensor<2> result(shape);
         for (size_t i = 0; i < shape[0]; ++i)
         {
             float max_val = x(i, 0);
@@ -71,7 +71,7 @@ namespace Activation {
         return result;
     }
 
-    inline Tensor<float, 2> apply_activation(const Tensor<float, 2>& x, ActivationFunction func)
+    inline Tensor<2> apply_activation(const Tensor<2>& x, ActivationFunction func)
     {
         switch (func)
         {
@@ -89,7 +89,7 @@ namespace Activation {
         return x;
     }
 
-    inline float mean_squared_error(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
+    inline float mean_squared_error(const Tensor<2>& prediction, const Tensor<2>& target)
     {
         auto shape = prediction.get_shape();
         float sum = 0.0f;
@@ -102,7 +102,7 @@ namespace Activation {
         return sum / (shape[0] * shape[1]);
     }
 
-    inline float cross_entropy_loss(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
+    inline float cross_entropy_loss(const Tensor<2>& prediction, const Tensor<2>& target)
     {
         auto shape = prediction.get_shape();
         float loss = 0.0f;
@@ -116,8 +116,8 @@ namespace Activation {
         return loss / shape[0];
     }
 
-    inline float compute_loss(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target,
+    inline float compute_loss(const Tensor<2>& prediction,
+        const Tensor<2>& target,
         LossFunction loss_func)
     {
         switch (loss_func)
@@ -130,20 +130,20 @@ namespace Activation {
         return 0.0f;
     }
 
-    inline Tensor<float, 2> relu_derivative(const Tensor<float, 2>& x)
+    inline Tensor<2> relu_derivative(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> grad(shape);
+        Tensor<2> grad(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 grad(i, j) = x(i, j) > 0.0f ? 1.0f : 0.0f;
         return grad;
     }
 
-    inline Tensor<float, 2> sigmoid_derivative(const Tensor<float, 2>& x)
+    inline Tensor<2> sigmoid_derivative(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> grad(shape);
+        Tensor<2> grad(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
             {
@@ -153,10 +153,10 @@ namespace Activation {
         return grad;
     }
 
-    inline Tensor<float, 2> tanh_derivative(const Tensor<float, 2>& x)
+    inline Tensor<2> tanh_derivative(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
-        Tensor<float, 2> grad(shape);
+        Tensor<2> grad(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
             {
@@ -166,28 +166,28 @@ namespace Activation {
         return grad;
     }
 
-    inline Tensor<float, 2> mse_derivative(const Tensor<float, 2>& prediction, const Tensor<float, 2>& target)
+    inline Tensor<2> mse_derivative(const Tensor<2>& prediction, const Tensor<2>& target)
     {
         auto shape = prediction.get_shape();
-        Tensor<float, 2> grad(shape);
+        Tensor<2> grad(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 grad(i, j) = 2.0f * (prediction(i, j) - target(i, j)) / (shape[0] * shape[1]);
         return grad;
     }
 
-    inline Tensor<float, 2> softmax_cross_entropy_derivative(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target)
+    inline Tensor<2> softmax_cross_entropy_derivative(const Tensor<2>& prediction,
+        const Tensor<2>& target)
     {
         auto shape = prediction.get_shape();
-        Tensor<float, 2> grad(shape);
+        Tensor<2> grad(shape);
         for (size_t i = 0; i < shape[0]; ++i)
             for (size_t j = 0; j < shape[1]; ++j)
                 grad(i, j) = (prediction(i, j) - target(i, j)) / shape[0];
         return grad;
     }
 
-    inline Tensor<float, 2> activation_derivative(const Tensor<float, 2>& pre_activation,
+    inline Tensor<2> activation_derivative(const Tensor<2>& pre_activation,
         ActivationFunction func)
     {
         switch (func)
@@ -199,15 +199,15 @@ namespace Activation {
         case ActivationFunction::Tanh:
             return tanh_derivative(pre_activation);
         case ActivationFunction::Softmax:
-            return Tensor<float, 2>(pre_activation.get_shape());
+            return Tensor<2>(pre_activation.get_shape());
         case ActivationFunction::None:
-            return Tensor<float, 2>(pre_activation.get_shape());
+            return Tensor<2>(pre_activation.get_shape());
         }
-        return Tensor<float, 2>(pre_activation.get_shape());
+        return Tensor<2>(pre_activation.get_shape());
     }
 
-    inline Tensor<float, 2> loss_derivative(const Tensor<float, 2>& prediction,
-        const Tensor<float, 2>& target,
+    inline Tensor<2> loss_derivative(const Tensor<2>& prediction,
+        const Tensor<2>& target,
         LossFunction loss_func,
         ActivationFunction output_activation)
     {
@@ -219,6 +219,6 @@ namespace Activation {
         {
             return mse_derivative(prediction, target);
         }
-        return Tensor<float, 2>(prediction.get_shape());
+        return Tensor<2>(prediction.get_shape());
     }
 }

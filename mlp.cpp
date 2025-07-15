@@ -6,13 +6,13 @@
 
 std::default_random_engine rng(std::random_device{}());
 
-void print_tensor_shape(const std::string& name, const Tensor<float, 2>& tensor)
+void print_tensor_shape(const std::string& name, const Tensor<2>& tensor)
 {
     auto shape = tensor.get_shape();
     std::cout << name << " shape: (" << shape[0] << ", " << shape[1] << ")" << std::endl;
 }
 
-void print_tensor_content(const std::string& name, const Tensor<float, 2>& tensor)
+void print_tensor_content(const std::string& name, const Tensor<2>& tensor)
 {
     auto shape = tensor.get_shape();
     std::cout << name << " content (" << shape[0] << "x" << shape[1] << "):" << std::endl;
@@ -50,14 +50,14 @@ void MultiLayerPerceptron::print_network_details() const
 
 void MultiLayerPerceptron::forward()
 {
-    Tensor<float, 2> current_activation = input;
+    Tensor<2> current_activation = input;
 
     for (size_t i = 0; i < layer_sizes.size() - 1; ++i)
     {
 
-        Tensor<float, 2> transposed_weight = Tensor<float, 2>::transpose(weight[i]);
+        Tensor<2> transposed_weight = Tensor<2>::transpose(weight[i]);
 
-        Tensor<float, 2> z = Tensor<float, 2>::matmul(current_activation, transposed_weight);
+        Tensor<2> z = Tensor<2>::matmul(current_activation, transposed_weight);
 
         pre_activations[i] = z + biases[i].broadcast_to_rows(batch_size);
 
@@ -77,15 +77,15 @@ void MultiLayerPerceptron::backward()
     for (int i = static_cast<int>(layer_sizes.size() - 3); i >= 0; i--)
     {
 
-        Tensor<float, 2> next_delta;
-        Tensor<float, 2> next_weight;
+        Tensor<2> next_delta;
+        Tensor<2> next_weight;
 
         next_delta = deltas[i + 1];
         next_weight = weight[i + 1];
         
         // Calculate delta for current layer
-        Tensor<float, 2> error_prop = Tensor<float, 2>::matmul(next_delta, next_weight);
-        Tensor<float, 2> act_deriv = Activation::activation_derivative(pre_activations[i], activation_functions[i]);
+        Tensor<2> error_prop = Tensor<2>::matmul(next_delta, next_weight);
+        Tensor<2> act_deriv = Activation::activation_derivative(pre_activations[i], activation_functions[i]);
 
         deltas[i] = error_prop * act_deriv;
     }
@@ -94,13 +94,13 @@ void MultiLayerPerceptron::backward()
     for (size_t i = 0; i < layer_sizes.size() - 1; ++i)
     {
 
-        Tensor<float, 2> current_input_for_grad = (i == 0) ? input : activations[i - 1];
+        Tensor<2> current_input_for_grad = (i == 0) ? input : activations[i - 1];
 
         // Weight gradient: dW = A_prev^T * delta
-        Tensor<float, 2> weight_gradient = Tensor<float, 2>::matmul(Tensor<float, 2>::transpose(deltas[i]), current_input_for_grad );
+        Tensor<2> weight_gradient = Tensor<2>::matmul(Tensor<2>::transpose(deltas[i]), current_input_for_grad );
 
         // Bias gradient: sum over batch dimension
-        Tensor<float, 2> bias_gradient({ 1, static_cast<size_t>(layer_sizes[i + 1]) });
+        Tensor<2> bias_gradient({ 1, static_cast<size_t>(layer_sizes[i + 1]) });
         for (size_t col = 0; col < layer_sizes[i + 1]; ++col)
         {
             float sum_col = 0.0f;
@@ -118,7 +118,7 @@ void MultiLayerPerceptron::set_input(const std::vector<std::vector<float>>& inpu
 {
     if (input.get_shape()[0] != input_batch.size() || input.get_shape()[1] != static_cast<size_t>(layer_sizes[0]))
     {
-        input = Tensor<float, 2>({ input_batch.size(), static_cast<size_t>(layer_sizes[0]) });
+        input = Tensor<2>({ input_batch.size(), static_cast<size_t>(layer_sizes[0]) });
     }
 
     for (size_t i = 0; i < input_batch.size(); ++i)
@@ -135,7 +135,7 @@ void MultiLayerPerceptron::set_desire_output(const std::vector<std::vector<float
     auto shape = desire_output.get_shape();
     if (shape[0] != output_batch.size() || shape[1] != output_batch[0].size())
     {
-        desire_output = Tensor<float, 2>({ output_batch.size(), output_batch[0].size() });
+        desire_output = Tensor<2>({ output_batch.size(), output_batch[0].size() });
     }
 
     for (size_t i = 0; i < output_batch.size(); ++i)
@@ -192,7 +192,7 @@ std::vector<std::vector<float>> MultiLayerPerceptron::predict_batch(const std::v
     set_input(input_batch);
     forward();
 
-    const Tensor<float, 2>& output = activations.back();
+    const Tensor<2>& output = activations.back();
     auto shape = output.get_shape();
 
     std::vector<std::vector<float>> predictions(shape[0], std::vector<float>(shape[1]));
@@ -211,8 +211,8 @@ void MultiLayerPerceptron::initialize_activations()
     for (size_t i = 1; i < layer_sizes.size(); i++)
     {
         size_t size = static_cast<size_t>(layer_sizes[i]);
-        activations.emplace_back(Tensor<float, 2>({ static_cast<size_t>(batch_size), size }));
-        pre_activations.emplace_back(Tensor<float, 2>({ static_cast<size_t>(batch_size), size }));
+        activations.emplace_back(Tensor<2>({ static_cast<size_t>(batch_size), size }));
+        pre_activations.emplace_back(Tensor<2>({ static_cast<size_t>(batch_size), size }));
     }
 }
 
@@ -221,7 +221,7 @@ void MultiLayerPerceptron::initialize_deltas()
     deltas.clear();
     for (size_t i = 0; i < layer_sizes.size() - 1; i++) // Deltas are calculated for each set of weights, so N-1 layers
     {
-        deltas.emplace_back(Tensor<float, 2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[i + 1]) }));
+        deltas.emplace_back(Tensor<2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[i + 1]) }));
     }
 }
 
@@ -238,7 +238,7 @@ void MultiLayerPerceptron::initialize_weights_and_biases()
         float limit = std::sqrt(6.0f / (in_features + out_features));
         std::uniform_real_distribution<float> dist(-limit, limit);
 
-        Tensor<float, 2> W({ out_features, in_features });
+        Tensor<2> W({ out_features, in_features });
         for (size_t r = 0; r < out_features; ++r)
         {
             for (size_t c = 0; c < in_features; ++c)
@@ -250,7 +250,7 @@ void MultiLayerPerceptron::initialize_weights_and_biases()
 
         // Initialize biases (e.g., to zeros or small constant)
         // Biases are (1, out_features) which can be broadcasted to (batch_size, out_features)
-        Tensor<float, 2> B({ 1, out_features });
+        Tensor<2> B({ 1, out_features });
         for (size_t c = 0; c < out_features; ++c)
         {
             B(0, c) = 0.0f; // Initialize biases to zero
@@ -261,6 +261,6 @@ void MultiLayerPerceptron::initialize_weights_and_biases()
 
 void MultiLayerPerceptron::initialize_input_output()
 {
-    input = Tensor<float, 2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0]) });
-    desire_output = Tensor<float, 2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes.back()) });
+    input = Tensor<2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0]) });
+    desire_output = Tensor<2>({ static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes.back()) });
 }
