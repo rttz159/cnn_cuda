@@ -48,6 +48,24 @@ void MultiLayerPerceptron::print_network_details() const
               << std::endl;
 }
 
+void print_tensor2D(const CudaTensor<2>& tensor, const std::string& name = "Tensor") {
+    const size_t* shape = tensor.get_shape();
+    size_t rows = shape[0];
+    size_t cols = shape[1];
+
+    std::vector<float> host_data(rows * cols);
+    tensor.copy_to_host(host_data.data());
+
+    std::cout << name << " (" << rows << "x" << cols << "):\n";
+    for (size_t i = 0; i < rows; ++i) {
+        std::cout << "[ ";
+        for (size_t j = 0; j < cols; ++j) {
+            std::cout << host_data[i * cols + j] << " ";
+        }
+        std::cout << "]\n";
+    }
+}
+
 void MultiLayerPerceptron::forward()
 {
     if (cudaEnabled)
@@ -65,7 +83,7 @@ void MultiLayerPerceptron::forward()
             z_biased.elementwise_add(z, broadcast_bias);
 
             pre_activations_cuda[i] = z_biased;
-            apply_activation_cuda(z_biased, activations_cuda[i], activation_functions[i]);
+            apply_activation_cuda(pre_activations_cuda[i], activations_cuda[i], activation_functions[i]);
 
             current = activations_cuda[i];
         }
@@ -94,7 +112,16 @@ void MultiLayerPerceptron::backward()
 {
     if (cudaEnabled)
     {
-        apply_softmax_cross_entropy_grad_cuda(activations_cuda.back(), desire_output_cuda, deltas_cuda.back());
+        if (lossfunction == LossFunction::CrossEntropy &&
+            activation_functions.back() == ActivationFunction::Softmax)
+        {
+            apply_softmax_cross_entropy_grad_cuda(activations_cuda.back(), desire_output_cuda, deltas_cuda.back());
+        }
+        else if (lossfunction == LossFunction::MSE)
+        {
+            deltas_cuda.back().elementwise_subtract(activations_cuda.back(), desire_output_cuda);
+            apply_activation_derivative_cuda(pre_activations_cuda.back(), deltas_cuda.back(), activation_functions.back());
+        }
 
         for (int i = static_cast<int>(layer_sizes.size() - 3); i >= 0; --i)
         {
@@ -111,8 +138,8 @@ void MultiLayerPerceptron::backward()
             CudaTensor<2> bias_grad({1, static_cast<size_t>(layer_sizes[i + 1])});
             reduce_rows_cuda(deltas_cuda[i], bias_grad);
 
-            update_weights_cuda(weight_cuda[i], weight_grad, learning_rate);
-            update_weights_cuda(biases_cuda[i], bias_grad, learning_rate);
+            update_weights_cuda(weight_cuda[i], weight_grad, learning_rate, batch_size);
+            update_weights_cuda(biases_cuda[i], bias_grad, learning_rate, batch_size);
         }
     }
     else
@@ -205,6 +232,8 @@ void MultiLayerPerceptron::train(const std::vector<std::vector<float>> &X_train,
 
     for (int epoch = 0; epoch < epochs; ++epoch)
     {
+        float total_loss = 0.0f;
+        size_t total_batches = 0;
 
         for (size_t i = 0; i < num_samples; i += batch_size)
         {
@@ -224,10 +253,30 @@ void MultiLayerPerceptron::train(const std::vector<std::vector<float>> &X_train,
             set_desire_output(batch_y);
             forward();
             backward();
+
+            float batch_loss = 0.0f;
+            if (cudaEnabled)
+            {
+                const CudaTensor<2>& prediction = activations_cuda.back(); 
+                const CudaTensor<2>& target = desire_output_cuda;
+                batch_loss = compute_loss_gpu(prediction, target, lossfunction, activation_functions.back());
+            }
+            else
+            {
+                const Tensor<2>& prediction = activations.back();           
+                const Tensor<2>& target = desire_output;
+                batch_loss = Activation::compute_loss(prediction, target, lossfunction, activation_functions.back());
+            }
+            total_loss += batch_loss;
+            total_batches++;
         }
 
-        std::cout << "Epoch " << epoch + 1 << "/" << epochs << " complete.\n";
-    }
+        float acc = evaluate_accuracy(X_train, y_train);
+        float average_loss = total_loss / total_batches;
+        std::cout << "Epoch " << epoch + 1 << "/" << epochs
+            << " complete. Avg Loss: " << average_loss
+            << " | Accuracy: " << acc << std::endl;
+        }
 }
 
 std::vector<std::vector<float>> MultiLayerPerceptron::predict_batch(const std::vector<std::vector<float>> &input_batch)
@@ -322,22 +371,37 @@ void MultiLayerPerceptron::initialize_weights_and_biases()
         size_t in_features = layer_sizes[i];
         size_t out_features = layer_sizes[i + 1];
 
-        float limit = std::sqrt(6.0f / (in_features + out_features));
-        std::uniform_real_distribution<float> dist(-limit, limit);
-
         Tensor<2> W({out_features, in_features});
         Tensor<2> B({1, out_features});
 
-        for (size_t r = 0; r < out_features; ++r)
-        {
-            for (size_t c = 0; c < in_features; ++c)
+        if (activation_functions[0] == ActivationFunction::ReLU) {
+            float limit = std::sqrt(2.0f / in_features); // He (Kaiming) initialization for ReLU
+            std::uniform_real_distribution<float> dist(-limit, limit);
+            for (size_t r = 0; r < out_features; ++r)
             {
-                W(r, c) = dist(rng);
+                for (size_t c = 0; c < in_features; ++c)
+                {
+                    W(r, c) = dist(rng);
+                }
+            }
+        } else {
+            float limit = std::sqrt(6.0f / (in_features + out_features)); // Xavier/Glorot
+            std::uniform_real_distribution<float> dist(-limit, limit);
+            for (size_t r = 0; r < out_features; ++r)
+            {
+                for (size_t c = 0; c < in_features; ++c)
+                {
+                    W(r, c) = dist(rng);
+                }
             }
         }
+
+        float bias_limit = 0.05f;
+        std::uniform_real_distribution<float> bias_dist(-bias_limit, bias_limit);
+
         for (size_t c = 0; c < out_features; ++c)
         {
-            B(0, c) = 0.0f;
+            B(0, c) = bias_dist(rng);
         }
 
         weight.push_back(W);
@@ -367,4 +431,27 @@ void MultiLayerPerceptron::initialize_input_output()
         input_cuda = CudaTensor<2>({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0])});
         desire_output_cuda = CudaTensor<2>({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes.back())});
     }
+}
+
+float MultiLayerPerceptron::evaluate_accuracy(const std::vector<std::vector<float>> &X,
+                                              const std::vector<std::vector<float>> &y)
+{
+    int correct = 0;
+    std::vector<std::vector<float>> predictions = predict_batch(X);
+
+    for (size_t i = 0; i < predictions.size(); ++i)
+    {
+        // Get index of max output value
+        int pred_label = std::distance(predictions[i].begin(),
+                                       std::max_element(predictions[i].begin(), predictions[i].end()));
+
+        // Get index of actual class from one-hot encoded label
+        int true_label = std::distance(y[i].begin(),
+                                       std::max_element(y[i].begin(), y[i].end()));
+
+        if (pred_label == true_label)
+            ++correct;
+    }
+
+    return static_cast<float>(correct) / X.size();
 }

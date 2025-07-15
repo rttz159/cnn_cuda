@@ -75,3 +75,10 @@ __global__ void kernel_scalar_mul(const float *A, float *C, float scalar, size_t
     if (idx < size)
         C[idx] = A[idx] * scalar;
 }
+
+__global__ void kernel_subtract(const float *A, const float *B, float *C, size_t size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        C[idx] = A[idx] - B[idx];
+    }
+}

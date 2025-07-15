@@ -65,6 +65,8 @@ public:
 
     void print_network_details() const;
 
+    float evaluate_accuracy(const std::vector<std::vector<float>> &X, const std::vector<std::vector<float>> &y);
+
 private:
     void initialize_activations();
     void initialize_deltas();

@@ -6,6 +6,6 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 find_package(CUDAToolkit REQUIRED)
 
-add_executable(app test.cu kernel.cpp mlp.cu activation_utils.cu cuda_tensor.cu)
+add_executable(app test_2.cu kernel.cpp mlp.cu activation_utils.cu cuda_tensor.cu)
 
 target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR}/include ${CUDAToolkit_INCLUDE_DIRS})

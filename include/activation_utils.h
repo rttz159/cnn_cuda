@@ -221,4 +221,61 @@ namespace Activation {
         }
         return Tensor<2>(prediction.get_shape());
     }
+
+    inline float softmax_cross_entropy_loss(const Tensor<2>& prediction, const Tensor<2>& target)
+    {
+        float loss = 0.0f;
+        auto shape = prediction.get_shape();
+        size_t batch_size = shape[0];
+        size_t num_classes = shape[1];
+
+        for (size_t i = 0; i < batch_size; ++i)
+        {
+            for (size_t j = 0; j < num_classes; ++j)
+            {
+                float p = prediction(i, j);
+                float t = target(i, j);
+
+                if (t > 0)
+                    loss -= t * std::log(std::max(p, 1e-7f));
+            }
+        }
+
+        return loss / static_cast<float>(batch_size);
+    }
+
+
+    inline float compute_mse_loss(const Tensor<2>& prediction, const Tensor<2>& target) {
+        float loss = 0.0f;
+        auto shape = prediction.get_shape();
+        size_t batch_size = shape[0];
+        size_t num_outputs = shape[1];
+
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < num_outputs; ++j) {
+                float diff = prediction(i, j) - target(i, j);
+                loss += diff * diff;
+            }
+        }
+
+        return loss / (batch_size * num_outputs);
+    }
+
+    inline float compute_loss(const Tensor<2>& prediction,
+                          const Tensor<2>& target,
+                          LossFunction loss_func,
+                          ActivationFunction output_activation)
+    {
+        if (loss_func == LossFunction::CrossEntropy && output_activation == ActivationFunction::Softmax)
+        {
+            return softmax_cross_entropy_loss(prediction, target);
+        }
+        else if (loss_func == LossFunction::MSE)
+        {
+            return compute_mse_loss(prediction, target);
+        }
+        return 0.0f;
+    }
+
+
 }

@@ -16,6 +16,8 @@ __global__ void tiled_mat_mul_kernel(float *A, float *B, float *C,
 
 __global__ void kernel_add(const float *A, const float *B, float *C, size_t size);
 
+__global__ void kernel_subtract(const float *A, const float *B, float *C, size_t size);
+
 __global__ void kernel_scalar_mul(const float *A, float *C, float scalar, size_t size);
 
 template <int N>
@@ -47,6 +49,19 @@ public:
         cudaMalloc(&data, total_size * sizeof(float));
         cudaMemset(data, 0, total_size * sizeof(float));
     }
+
+    CudaTensor(const CudaTensor& other)
+    {
+        for (int i = 0; i < N; ++i)
+            shape[i] = other.shape[i];
+
+        total_size = other.total_size;
+        compute_strides();
+
+        cudaMalloc(&data, total_size * sizeof(float));
+        cudaMemcpy(data, other.data, total_size * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+
 
     ~CudaTensor()
     {
@@ -109,6 +124,17 @@ public:
         cudaDeviceSynchronize();
     }
 
+    void elementwise_subtract(const CudaTensor<N> &A, const CudaTensor<N> &B)
+    {
+        if (A.total_size != B.total_size || A.total_size != total_size)
+            throw std::invalid_argument("Size mismatch for subtraction");
+
+        size_t threads = 256;
+        size_t blocks = (total_size + threads - 1) / threads;
+        kernel_subtract<<<blocks, threads>>>(A.data, B.data, this->data, total_size);
+        cudaDeviceSynchronize();
+    }
+
     // Scalar multiplication: this = A * scalar
     void scalar_multiply(const CudaTensor<N> &A, float scalar)
     {
@@ -147,6 +173,27 @@ public:
             transpose_B);
         cudaDeviceSynchronize();
     }
+
+    CudaTensor& operator=(const CudaTensor& other)
+    {
+        if (this == &other) return *this; 
+
+        // Free existing data
+        if (data)
+            cudaFree(data);
+
+        for (int i = 0; i < N; ++i)
+            shape[i] = other.shape[i];
+
+        total_size = other.total_size;
+        compute_strides();
+
+        cudaMalloc(&data, total_size * sizeof(float));
+        cudaMemcpy(data, other.data, total_size * sizeof(float), cudaMemcpyDeviceToDevice);
+
+        return *this;
+    }
+
 
 private:
     void compute_strides()

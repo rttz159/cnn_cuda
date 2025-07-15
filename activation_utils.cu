@@ -27,6 +27,30 @@ __global__ void activation_kernel(float* input, float* output, size_t size, Acti
     output[idx] = y;
 }
 
+__global__ void softmax_kernel(float* input, float* output, size_t rows, size_t cols) {
+    size_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= rows) return;
+
+    float* input_row = input + row * cols;
+    float* output_row = output + row * cols;
+
+    float max_val = input_row[0];
+    for (size_t j = 1; j < cols; ++j) {
+        max_val = fmaxf(max_val, input_row[j]);
+    }
+
+    float sum_exp = 0.0f;
+    for (size_t j = 0; j < cols; ++j) {
+        output_row[j] = __expf(input_row[j] - max_val);
+        sum_exp += output_row[j];
+    }
+
+    for (size_t j = 0; j < cols; ++j) {
+        output_row[j] /= sum_exp;
+    }
+}
+
+
 __global__ void activation_derivative_kernel(float* input, float* output, size_t size, ActivationFunction func) {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size) return;
@@ -50,7 +74,7 @@ __global__ void activation_derivative_kernel(float* input, float* output, size_t
             break;
     }
 
-    output[idx] = grad;
+    output[idx] *= grad;
 }
 
 __global__ void softmax_cross_entropy_grad_kernel(float* prediction, float* target, float* grad, size_t batch, size_t classes) {
@@ -60,7 +84,7 @@ __global__ void softmax_cross_entropy_grad_kernel(float* prediction, float* targ
     size_t i = idx / classes;
     size_t j = idx % classes;
 
-    grad[i * classes + j] = (prediction[i * classes + j] - target[i * classes + j]) / batch;
+    grad[i * classes + j] = (prediction[i * classes + j] - target[i * classes + j]);
 }
 
 __global__ void reduce_rows_kernel(float* input, float* output, size_t rows, size_t cols) {
@@ -84,19 +108,68 @@ __global__ void broadcast_to_rows_kernel(const float* src, float* dst, size_t ro
     dst[row * cols + col] = src[col];
 }
 
-
-__global__ void update_weights_kernel(float* W, const float* grad, float lr, size_t size) {
+__global__ void update_weights_kernel(float* W, const float* grad, float lr, size_t size, float batch_size_float) { 
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        W[idx] -= lr * grad[idx];
+        W[idx] -= (lr / batch_size_float) * grad[idx]; 
     }
+}
+
+__global__ void kernel_mse_loss(const float *prediction, const float *target, float *loss_buffer, size_t size)
+{
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size)
+    {
+        float diff = prediction[idx] - target[idx];
+        loss_buffer[idx] = diff * diff;
+    }
+}
+
+__global__ void kernel_softmax_cross_entropy_loss(const float *logits, const float *target, float *loss_buffer, int batch_size, int num_classes)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= batch_size) return;
+
+    const float *logit_row = logits + i * num_classes;
+    const float *target_row = target + i * num_classes;
+
+    float max_logit = logit_row[0];
+    for (int j = 1; j < num_classes; ++j)
+        max_logit = fmaxf(max_logit, logit_row[j]);
+
+    float sum_exp = 0.0f;
+    for (int j = 0; j < num_classes; ++j)
+        sum_exp += __expf(logit_row[j] - max_logit);
+
+    float loss = 0.0f;
+    for (int j = 0; j < num_classes; ++j)
+    {
+        float softmax = __expf(logit_row[j] - max_logit) / sum_exp;
+        if (target_row[j] == 1.0f)
+        {
+            loss = -__logf(softmax + 1e-8f);
+            break;
+        }
+    }
+
+    loss_buffer[i] = loss;
 }
 
 void apply_activation_cuda(CudaTensor<2>& input, CudaTensor<2>& output, ActivationFunction func) {
     size_t size = input.size();
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
-    activation_kernel<<<blocks, threads>>>(input.raw(), output.raw(), size, func);
+    if (func == ActivationFunction::Softmax) {
+        size_t rows = input.get_shape()[0];
+        size_t cols = input.get_shape()[1];
+
+        dim3 softmax_blocks((rows + threads - 1) / threads, 1); 
+        dim3 softmax_threads(threads, 1);
+
+        softmax_kernel<<<rows, threads>>>(input.raw(), output.raw(), rows, cols); 
+    } else {
+        activation_kernel<<<blocks, threads>>>(input.raw(), output.raw(), size, func);
+    }
     cudaDeviceSynchronize();
 }
 
@@ -163,7 +236,7 @@ void reduce_rows_cuda(CudaTensor<2>& input, CudaTensor<2>& output) {
     }
 }
 
-void update_weights_cuda(CudaTensor<2>& W, const CudaTensor<2>& grad, float lr) {
+void update_weights_cuda(CudaTensor<2>& W, const CudaTensor<2>& grad, float lr, float batch_size_float) {
     if (W.size() != grad.size()) {
         throw std::invalid_argument("update_weights: size mismatch between weight and gradient tensors");
     }
@@ -172,11 +245,65 @@ void update_weights_cuda(CudaTensor<2>& W, const CudaTensor<2>& grad, float lr) 
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
 
-    update_weights_kernel<<<blocks, threads>>>(W.raw(), grad.raw(), lr, size);
+    update_weights_kernel<<<blocks, threads>>>(W.raw(), grad.raw(), lr, size, batch_size_float);
     cudaDeviceSynchronize();
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         throw std::runtime_error(std::string("update_weights kernel failed: ") + cudaGetErrorString(err));
     }
+}
+
+float compute_loss_gpu(const CudaTensor<2>& prediction,
+                              const CudaTensor<2>& target,
+                              LossFunction loss_func,
+                              ActivationFunction output_activation)
+{
+    const size_t* shape = prediction.get_shape();
+    int batch_size = static_cast<int>(shape[0]);
+    int output_size = static_cast<int>(shape[1]);
+
+    float* d_loss_buffer = nullptr;
+    float* h_loss_buffer = nullptr;
+    size_t loss_buffer_size = (loss_func == LossFunction::MSE)
+        ? batch_size * output_size
+        : batch_size;
+
+    cudaMalloc(&d_loss_buffer, loss_buffer_size * sizeof(float));
+    h_loss_buffer = new float[loss_buffer_size];
+
+    int threads = 256;
+    int blocks = (loss_buffer_size + threads - 1) / threads;
+
+    if (loss_func == LossFunction::MSE)
+    {
+        kernel_mse_loss<<<blocks, threads>>>(
+            prediction.raw(), target.raw(), d_loss_buffer, batch_size * output_size);
+    }
+    else if (loss_func == LossFunction::CrossEntropy &&
+             output_activation == ActivationFunction::Softmax)
+    {
+        blocks = (batch_size + threads - 1) / threads;
+        kernel_softmax_cross_entropy_loss<<<blocks, threads>>>(
+            prediction.raw(), target.raw(), d_loss_buffer, batch_size, output_size);
+    }
+    else
+    {
+        cudaFree(d_loss_buffer);
+        delete[] h_loss_buffer;
+        return 0.0f;
+    }
+
+    cudaMemcpy(h_loss_buffer, d_loss_buffer, loss_buffer_size * sizeof(float), cudaMemcpyDeviceToHost);
+
+    float total_loss = 0.0f;
+    for (size_t i = 0; i < loss_buffer_size; ++i)
+        total_loss += h_loss_buffer[i];
+
+    float average_loss = total_loss / loss_buffer_size;
+
+    cudaFree(d_loss_buffer);
+    delete[] h_loss_buffer;
+
+    return average_loss;
 }

@@ -1,89 +1,51 @@
-#include "cuda_tensor.cuh"
 #include <iostream>
 #include <vector>
-#include <cmath>
-#include <cassert>
+#include "mlp.h"
+#include "activation_utils.h"
 
-bool are_close(const std::vector<float> &a, const std::vector<float> &b, float tol = 1e-5f)
-{
-    for (size_t i = 0; i < a.size(); ++i)
-        if (std::abs(a[i] - b[i]) > tol)
-            return false;
-    return true;
+using namespace std;
+
+void print_vector(const vector<vector<float>>& vec, const string& label) {
+    cout << label << ":\n";
+    for (const auto& row : vec) {
+        for (float v : row) cout << v << " ";
+        cout << endl;
+    }
 }
 
-void test_elementwise_add()
-{
-    std::cout << "Running test: elementwise_add...\n";
-    const size_t shape[2] = {2, 3};
-    float host_A[] = {1, 2, 3, 4, 5, 6};
-    float host_B[] = {6, 5, 4, 3, 2, 1};
-    float expected[] = {7, 7, 7, 7, 7, 7};
+int main() {
+    vector<int> layer_sizes = {2, 2};  // Simple input-output network
+    vector<ActivationFunction> activations = {ActivationFunction::Softmax};
+    double lr = 0.1;
+    int batch_size = 1;
 
-    CudaTensor<2> A(shape), B(shape), C(shape);
-    A.copy_from_host(host_A);
-    B.copy_from_host(host_B);
-    C.elementwise_add(A, B);
+    // Simple XOR-style sample: input = [1, 0], label = [0, 1]
+    vector<vector<float>> X = {{1.0f, 0.0f}};
+    vector<vector<float>> Y = {{0.0f, 1.0f}};
 
-    std::vector<float> host_result(6);
-    C.copy_to_host(host_result.data());
+    cout << "\n==== CPU MODE ====" << endl;
+    MultiLayerPerceptron cpu_mlp(layer_sizes, activations, LossFunction::CrossEntropy, lr, batch_size, false);
+    auto cpu_pred_before = cpu_mlp.predict_batch(X);
+    print_vector(cpu_pred_before, "CPU Prediction BEFORE");
 
-    assert(are_close(host_result, std::vector<float>(expected, expected + 6)));
-    std::cout << "✅ Passed elementwise_add\n";
-}
+    cpu_mlp.train(X, Y, 1);
+    auto cpu_pred_after = cpu_mlp.predict_batch(X);
+    print_vector(cpu_pred_after, "CPU Prediction AFTER");
 
-void test_scalar_multiply()
-{
-    std::cout << "Running test: scalar_multiply...\n";
-    const size_t shape[2] = {2, 3};
-    float host_A[] = {1, 2, 3, 4, 5, 6};
-    float expected[] = {2, 4, 6, 8, 10, 12};
-    float scalar = 2.0f;
+    cout << "\n==== GPU MODE ====" << endl;
+    MultiLayerPerceptron gpu_mlp(layer_sizes, activations, LossFunction::CrossEntropy, lr, batch_size, true);
+    auto gpu_pred_before = gpu_mlp.predict_batch(X);
+    print_vector(gpu_pred_before, "GPU Prediction BEFORE");
 
-    CudaTensor<2> A(shape), C(shape);
-    A.copy_from_host(host_A);
-    C.scalar_multiply(A, scalar);
+    gpu_mlp.train(X, Y, 1);
+    auto gpu_pred_after = gpu_mlp.predict_batch(X);
+    print_vector(gpu_pred_after, "GPU Prediction AFTER");
 
-    std::vector<float> host_result(6);
-    C.copy_to_host(host_result.data());
+    cout << "\n==== Compare Difference ====" << endl;
+    for (size_t i = 0; i < cpu_pred_after[0].size(); ++i) {
+        float diff = abs(cpu_pred_after[0][i] - gpu_pred_after[0][i]);
+        cout << "Output[" << i << "] diff: " << diff << endl;
+    }
 
-    assert(are_close(host_result, std::vector<float>(expected, expected + 6)));
-    std::cout << "✅ Passed scalar_multiply\n";
-}
-
-void test_matmul_device()
-{
-    std::cout << "Running test: matmul_device...\n";
-    const size_t shapeA[2] = {2, 3};
-    const size_t shapeB[2] = {3, 2};
-
-    float host_A[] = {1, 2, 3, 4, 5, 6}; // 2x3
-    float host_B[] = {1, 2, 3, 4, 5, 6}; // 3x2
-    float expected[] = {
-        1 * 1 + 2 * 3 + 3 * 5, 1 * 2 + 2 * 4 + 3 * 6, // Row 0
-        4 * 1 + 5 * 3 + 6 * 5, 4 * 2 + 5 * 4 + 6 * 6  // Row 1
-    };
-
-    CudaTensor<2> A(shapeA), B(shapeB), C({2, 2});
-    A.copy_from_host(host_A);
-    B.copy_from_host(host_B);
-
-    CudaTensor<2> result({2, 2});
-    CudaTensor<2>::matmul_device(A, B, result);
-
-    std::vector<float> host_result(4);
-    result.copy_to_host(host_result.data());
-
-    assert(are_close(host_result, std::vector<float>(expected, expected + 4)));
-
-    std::cout << "✅ Passed matmul_device\n";
-}
-
-int main()
-{
-    test_elementwise_add();
-    test_scalar_multiply();
-    test_matmul_device();
-    std::cout << "\n🎉 All tests passed!\n";
     return 0;
 }
