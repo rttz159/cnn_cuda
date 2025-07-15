@@ -1,0 +1,158 @@
+#pragma once
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <cuda.h>
+#include <assert.h>
+#include <stdexcept>
+#include <iostream>
+#include <numeric>
+#include <algorithm>
+
+#define TILE_WIDTH 32
+
+__global__ void tiled_mat_mul_kernel(float *A, float *B, float *C,
+                                     int N1, int N2, int N3,
+                                     bool transpose_A, bool transpose_B);
+
+__global__ void kernel_add(const float *A, const float *B, float *C, size_t size);
+
+__global__ void kernel_scalar_mul(const float *A, float *C, float scalar, size_t size);
+
+template <int N>
+class CudaTensor
+{
+public:
+    float *data = nullptr;
+    size_t shape[N];
+    size_t strides[N];
+    size_t total_size = 1;
+
+    CudaTensor()
+    {
+        for (int i = 0; i < N; ++i) {
+            shape[i] = 0;
+            strides[i] = 0;
+        }
+    }
+
+    CudaTensor(const size_t (&dims)[N])
+    {
+        for (int i = 0; i < N; ++i)
+        {
+            shape[i] = dims[i];
+            total_size *= dims[i];
+        }
+        compute_strides();
+
+        cudaMalloc(&data, total_size * sizeof(float));
+        cudaMemset(data, 0, total_size * sizeof(float));
+    }
+
+    ~CudaTensor()
+    {
+        if (data)
+            cudaFree(data);
+    }
+
+    void copy_from_host(const float *host_data)
+    {
+        cudaMemcpy(data, host_data, total_size * sizeof(float), cudaMemcpyHostToDevice);
+    }
+
+    void copy_to_host(float *host_data) const
+    {
+        cudaMemcpy(host_data, data, total_size * sizeof(float), cudaMemcpyDeviceToHost);
+    }
+
+    void resize(const size_t (&new_shape)[N]) {
+        size_t new_total = 1;
+        for (int i = 0; i < N; ++i) new_total *= new_shape[i];
+
+        if (new_total != total_size) {
+            if (data) cudaFree(data);
+            cudaMalloc(&data, new_total * sizeof(float));
+            total_size = new_total;
+        }
+        std::copy(new_shape, new_shape + N, shape);
+        compute_strides();
+    }
+
+    size_t flat_index(const size_t (&indices)[N]) const
+    {
+        size_t idx = 0;
+        for (int i = 0; i < N; ++i)
+        {
+            if (indices[i] >= shape[i])
+                throw std::out_of_range("Index out of bounds");
+            idx += indices[i] * strides[i];
+        }
+        return idx;
+    }
+
+    float *raw() { return data; }
+    const float *raw() const { return data; }
+
+    size_t size() const { return total_size; }
+
+    const size_t *get_shape() const { return shape; }
+    const size_t *get_strides() const { return strides; }
+
+    // Element-wise addition: this = A + B
+    void elementwise_add(const CudaTensor<N> &A, const CudaTensor<N> &B)
+    {
+        if (A.total_size != B.total_size || A.total_size != total_size)
+            throw std::invalid_argument("Size mismatch for addition");
+
+        size_t threads = 256;
+        size_t blocks = (total_size + threads - 1) / threads;
+        kernel_add<<<blocks, threads>>>(A.data, B.data, this->data, total_size);
+        cudaDeviceSynchronize();
+    }
+
+    // Scalar multiplication: this = A * scalar
+    void scalar_multiply(const CudaTensor<N> &A, float scalar)
+    {
+        if (A.total_size != total_size)
+            throw std::invalid_argument("Size mismatch for scalar multiplication");
+
+        size_t threads = 256;
+        size_t blocks = (total_size + threads - 1) / threads;
+        kernel_scalar_mul<<<blocks, threads>>>(A.data, this->data, scalar, total_size);
+        cudaDeviceSynchronize();
+    }
+
+    // Matrix multiplication: C = A * B
+    static void matmul_device(const CudaTensor<2> &A, const CudaTensor<2> &B, CudaTensor<2> &C, bool transpose_A = false, bool transpose_B = false)
+    {
+        size_t N1 = transpose_A ? A.get_shape()[1] : A.get_shape()[0];
+        size_t N2 = transpose_A ? A.get_shape()[0] : A.get_shape()[1];
+        size_t N3 = transpose_B ? B.get_shape()[0] : B.get_shape()[1];
+
+        size_t B_inner = transpose_B ? B.get_shape()[1] : B.get_shape()[0];
+        if (N2 != B_inner)
+        {
+            throw std::invalid_argument("Inner dimensions must match for matrix multiplication.");
+        }
+
+        dim3 blockDim(TILE_WIDTH, TILE_WIDTH);
+        dim3 gridDim((N3 + TILE_WIDTH - 1) / TILE_WIDTH,
+                     (N1 + TILE_WIDTH - 1) / TILE_WIDTH);
+
+        tiled_mat_mul_kernel<<<gridDim, blockDim>>>(
+            A.data, B.data, C.data,
+            static_cast<int>(N1),
+            static_cast<int>(N2),
+            static_cast<int>(N3),
+            transpose_A,
+            transpose_B);
+        cudaDeviceSynchronize();
+    }
+
+private:
+    void compute_strides()
+    {
+        strides[N - 1] = 1;
+        for (int i = N - 2; i >= 0; --i)
+            strides[i] = strides[i + 1] * shape[i + 1];
+    }
+};

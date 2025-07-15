@@ -12,13 +12,13 @@ int main()
     // Define network architecture: 2 input features, 3 hidden neurons, 2 output neurons
     // Input features are 2, but with bias, it becomes 3 for the first layer's weight.
     // Output features are 2.
-    std::vector<int> layer_sizes = { 2, 10, 10, 2 }; // Input layer (features), Hidden layer, Output layer
-    std::vector<enum ActivationFunction> activation_function = { ActivationFunction::ReLU, ActivationFunction::ReLU, ActivationFunction::ReLU, ActivationFunction::Softmax };
+    std::vector<int> layer_sizes = {2, 10, 10, 2}; // Input layer (features), Hidden layer, Output layer
+    std::vector<enum ActivationFunction> activation_function = {ActivationFunction::ReLU, ActivationFunction::ReLU, ActivationFunction::ReLU, ActivationFunction::Softmax};
     double learning_rate = 0.001;
     int batch_size = 4;
 
     // Create an MLP instance
-    MultiLayerPerceptron mlp(layer_sizes, activation_function, LossFunction::CrossEntropy, learning_rate, batch_size);
+    MultiLayerPerceptron mlp(layer_sizes, activation_function, LossFunction::CrossEntropy, learning_rate, batch_size, true);
     std::cout << "MLP initialized with " << layer_sizes.size() << " layers." << std::endl;
 
     // --- Test Case 1: Simple XOR-like data ---
@@ -28,7 +28,7 @@ int main()
         {0.0f, 0.0f},
         {0.0f, 1.0f},
         {1.0f, 0.0f},
-        {1.0f, 1.0f} };
+        {1.0f, 1.0f}};
 
     std::vector<std::vector<float>> y_train = {
         {1.0f, 0.0f}, // Class 0

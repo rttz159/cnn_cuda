@@ -4,6 +4,8 @@ project(MyCudaProject LANGUAGES CUDA CXX)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-add_executable(app test.cpp cuda_tensor.cu kernel.cpp mlp.cpp)
+find_package(CUDAToolkit REQUIRED)
 
-target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_executable(app test.cu kernel.cpp mlp.cu activation_utils.cu cuda_tensor.cu)
+
+target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR}/include ${CUDAToolkit_INCLUDE_DIRS})
