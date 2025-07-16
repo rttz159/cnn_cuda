@@ -8,16 +8,18 @@
 #include <iostream>
 #include <memory>
 
+/*
+    Follow source code, implement MSE loss and Sigmoid activation function
+*/
+
 class MultiLayerPerceptron
 {
 public:
-    bool cudaEnabled = false;
-    double learning_rate = 0.001;
-    int batch_size = 1;
-    LossFunction lossfunction;
+    bool cudaEnabled;
+    double learning_rate ;
+    int batch_size;
 
     std::vector<int> layer_sizes;
-    std::vector<ActivationFunction> activation_functions;
 
     Tensor<2> input;
     Tensor<2> desire_output;
@@ -37,13 +39,11 @@ public:
     std::vector<Tensor<2>> pre_activations;
     std::vector<Tensor<2>> deltas;
 
-    MultiLayerPerceptron(std::vector<int> layers_size, std::vector<ActivationFunction> activation_functions, LossFunction lossfunction, double learning_rate, int batch_size, bool cudaEnabled = false)
+    MultiLayerPerceptron(std::vector<int> layers_size, double learning_rate, int batch_size, bool cudaEnabled = false)
     {
         this->learning_rate = learning_rate;
         this->layer_sizes = layers_size;
         this->batch_size = batch_size;
-        this->activation_functions = activation_functions;
-        this->lossfunction = lossfunction;
         this->cudaEnabled = cudaEnabled;
         initialize_input_output();
         initialize_weights_and_biases();
