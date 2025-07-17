@@ -14,10 +14,10 @@ void print_vector(const vector<vector<float>>& vec, const string& label) {
 }
 
 int main() {
-    std::vector<int> layer_sizes = {2, 128, 2}; 
+    std::vector<int> layer_sizes = {2, 24, 24, 2}; 
     double lr = 0.01;
     int batch_size = 2;
-    int training_epoch = 50;
+    int training_epoch = 100;
 
     // Simple XOR-style sample: input = [1, 0], label = [0, 1]
     vector<vector<float>> X = {{1.0f, 0.0f},{1.0f,1.0f}};

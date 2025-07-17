@@ -1,7 +1,19 @@
 #pragma once
 #include "tensor.h"
 
+#define ALPHA 0.001
+
 namespace Activation {
+
+    inline Tensor<2> leaky_relu(const Tensor<2>& x)
+    {
+        const auto shape = x.get_shape();
+        Tensor<2> result(shape);
+        for (size_t i = 0; i < shape[0]; ++i)
+            for (size_t j = 0; j < shape[1]; ++j)
+                result(i, j) = x(i, j) > 0.0f ? x(i, j) : ALPHA * x(i, j);
+        return result;
+    }
 
     inline Tensor<2> sigmoid(const Tensor<2>& x)
     {
@@ -11,11 +23,6 @@ namespace Activation {
             for (size_t j = 0; j < shape[1]; ++j)
                 result(i, j) = 1.0f / (1.0f + std::exp(-x(i, j)));
         return result;
-    }
-
-    inline Tensor<2> apply_activation(const Tensor<2>& x)
-    {
-        return sigmoid(x);
     }
 
     inline float mean_squared_error(const Tensor<2>& prediction, const Tensor<2>& target)
@@ -31,12 +38,6 @@ namespace Activation {
         return sum / (shape[0] * shape[1]);
     }
 
-    inline float compute_loss(const Tensor<2>& prediction,
-        const Tensor<2>& target)
-    {
-        return mean_squared_error(prediction, target);
-    }
-
     inline Tensor<2> sigmoid_derivative(const Tensor<2>& x)
     {
         auto shape = x.get_shape();
@@ -49,6 +50,17 @@ namespace Activation {
             }
         return grad;
     }
+
+    inline Tensor<2> leaky_relu_derivative(const Tensor<2>& x)
+    {
+        const auto shape = x.get_shape();
+        Tensor<2> grad(shape);
+        for (size_t i = 0; i < shape[0]; ++i)
+            for (size_t j = 0; j < shape[1]; ++j)
+                grad(i, j) = x(i, j) > 0.0f ? 1.0f : ALPHA;
+        return grad;
+    }
+
 
     inline Tensor<2> mse_derivative(const Tensor<2>& prediction, const Tensor<2>& target)
     {

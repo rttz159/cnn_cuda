@@ -1,5 +1,6 @@
 #pragma once
 #include "tensor.h"
+#include "layers.h"
 #include "cuda_tensor.cuh"
 #include "activation_utils.h"
 #include "activation_utils.cuh"
@@ -12,7 +13,7 @@
     Follow source code, implement MSE loss and Sigmoid activation function
 */
 
-class MultiLayerPerceptron
+class MultiLayerPerceptron: public Layer<2> 
 {
 public:
     bool cudaEnabled;
@@ -53,6 +54,9 @@ public:
 
     void forward();
     void backward();
+    Tensor<2> fw(const Tensor<2>& input) override;
+    Tensor<2> bp(const Tensor<2>& grad_output) override;
+    void update_weights(float learning_rate) override;
 
     void set_input(const std::vector<std::vector<float>> &input_batch);
     void set_desire_output(const std::vector<std::vector<float>> &output_batch);
@@ -66,6 +70,8 @@ public:
     void print_network_details() const;
 
     float evaluate_accuracy(const std::vector<std::vector<float>> &X, const std::vector<std::vector<float>> &y);
+
+    void initialize_network();
 
 private:
     void initialize_activations();

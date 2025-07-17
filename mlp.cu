@@ -137,7 +137,7 @@ void MultiLayerPerceptron::forward()
 
             pre_activations[i] = z + biases[i].broadcast_to_rows(batch_size);
 
-            activations[i] = Activation::apply_activation(pre_activations[i]);
+            activations[i] = Activation::sigmoid(pre_activations[i]);
 
             current_activation = activations[i];
         }
@@ -275,6 +275,18 @@ void MultiLayerPerceptron::backward()
             biases[i] = biases[i] - (bias_gradient * learning_rate);
         }
     }
+}
+
+Tensor<2> MultiLayerPerceptron::fw(const Tensor<2>& input) {
+    this->input = input;
+    forward();
+    return activations.back();
+}
+
+Tensor<2> MultiLayerPerceptron::bp(const Tensor<2>& grad_output) {
+    this->desire_output = grad_output;
+    backward();
+    return deltas.front();
 }
 
 void MultiLayerPerceptron::set_input(const std::vector<std::vector<float>> &input_batch)
@@ -505,4 +517,12 @@ void MultiLayerPerceptron::initialize_input_output()
         input_cuda = CudaTensor<2>({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0])});
         desire_output_cuda = CudaTensor<2>({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes.back())});
     }
+}
+
+void MultiLayerPerceptron::initialize_network()
+{
+    initialize_weights_and_biases();
+    initialize_input_output();
+    initialize_activations();
+    initialize_deltas();
 }
