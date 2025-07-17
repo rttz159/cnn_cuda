@@ -289,6 +289,18 @@ Tensor<2> MultiLayerPerceptron::bp(const Tensor<2>& grad_output) {
     return deltas.front();
 }
 
+CudaTensor<2> MultiLayerPerceptron::fw_cuda(const CudaTensor<2>& input) {
+    this->input_cuda = input;
+    forward();
+    return activations_cuda.back();
+}
+
+CudaTensor<2> MultiLayerPerceptron::bp_cuda(const CudaTensor<2>& grad_output) {
+    this->desire_output_cuda = grad_output;
+    backward();
+    return deltas_cuda.front();
+}
+
 void MultiLayerPerceptron::set_input(const std::vector<std::vector<float>> &input_batch)
 {
     if (input.get_shape()[0] != input_batch.size() || input.get_shape()[1] != static_cast<size_t>(layer_sizes[0]))

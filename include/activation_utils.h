@@ -5,13 +5,14 @@
 
 namespace Activation {
 
-    inline Tensor<2> leaky_relu(const Tensor<2>& x)
+    inline Tensor<3> leaky_relu(const Tensor<3>& x)
     {
         const auto shape = x.get_shape();
-        Tensor<2> result(shape);
-        for (size_t i = 0; i < shape[0]; ++i)
-            for (size_t j = 0; j < shape[1]; ++j)
-                result(i, j) = x(i, j) > 0.0f ? x(i, j) : ALPHA * x(i, j);
+        Tensor<3> result(shape);
+        for (size_t d = 0; d < shape[0]; ++d)
+            for (size_t h = 0; h < shape[1]; ++h)
+                for (size_t w = 0; w < shape[2]; ++w)
+                    result(d, h, w) = x(d, h, w) > 0.0f ? x(d, h, w) : ALPHA * x(d, h, w);
         return result;
     }
 
@@ -51,16 +52,16 @@ namespace Activation {
         return grad;
     }
 
-    inline Tensor<2> leaky_relu_derivative(const Tensor<2>& x)
+    inline Tensor<3> leaky_relu_derivative(const Tensor<3>& x)
     {
         const auto shape = x.get_shape();
-        Tensor<2> grad(shape);
-        for (size_t i = 0; i < shape[0]; ++i)
-            for (size_t j = 0; j < shape[1]; ++j)
-                grad(i, j) = x(i, j) > 0.0f ? 1.0f : ALPHA;
+        Tensor<3> grad(shape);
+        for (size_t d = 0; d < shape[0]; ++d)
+            for (size_t h = 0; h < shape[1]; ++h)
+                for (size_t w = 0; w < shape[2]; ++w)
+                    grad(d, h, w) = x(d, h, w) > 0.0f ? 1.0f : ALPHA;
         return grad;
     }
-
 
     inline Tensor<2> mse_derivative(const Tensor<2>& prediction, const Tensor<2>& target)
     {

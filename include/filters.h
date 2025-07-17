@@ -1,34 +1,56 @@
 #pragma once
 
-#include <iostream>
-#include <vector>
 #include "tensor.h"
+#include "activation_utils.h"
 #include "cuda_tensor.cuh"
+#include <vector>
+#include <cmath>
+#include <cassert>
 
-using namespace std;
+/*
+    Images in the dimension of [Batch_size, Channels, Height, Width]
+*/
 
-class Convolutional
+__global__ void im2col_batch_kernel(
+    const float* __restrict__ input,  // [B, C, H, W]
+    float* __restrict__ output_col,   // [C*KH*KW, B*OH*OW]
+    int B, int C, int H, int W,
+    int KH, int KW,
+    int OH, int OW,
+    int stride, int padding);
+
+__global__ void col2im_batch_kernel(
+    const float* __restrict__ col,  // [C*KH*KW, B*OH*OW]
+    float* __restrict__ input_grad, // [B, C, H, W]
+    int B, int C, int H, int W,
+    int KH, int KW,
+    int OH, int OW,
+    int stride, int padding);
+
+class ConvBlock
 {
 public:
-    int _image_dim[3] = {1, 16, 16}; // image specification
-    int _specs[4] = {2, 3, 3, 3};    // filter specifications
-    int _out_dim[3] = {2, 13, 13};   // convoluted output dimensions
-    int _padding = 1;
-    int _stride = 2;
+    int batch_size;
+    int in_channels, out_channels;
+    int kernel_size, stride, padding;
 
-    Tensor<4> filter; //[num_kernels, kernel_height, kernel_width, input_depth]
-    Tensor<3> cache;  // for img after padding
+    Tensor<2> weights; // [F, C×KH×KW]
+    Tensor<1> biases;  // [F]
 
-    inline int compute_conv_output_dim(int input_size, int filter_size, int padding, int stride)
-    {
-        return ((input_size - filter_size + 2 * padding) / stride) + 1;
-    }
+    Tensor<4> input_cache;     // [B, C, H, W]
+    Tensor<2> input_cols;      // [C×KH×KW, B×OH×OW]
+    Tensor<4> pre_activations; // [B, F, OH, OW]
+    Tensor<4> activations;     // [B, F, OH, OW]
 
-    void _out_dimension();
-    void padding(Tensor<3> &original_img, Tensor<3> &out_img);
-    void backward(Tensor<3> d_out_vol, Tensor<3> &d_input);
-    void forward(Tensor<3> &image, Tensor<3> &out);
+    Tensor<2> d_weights; // [F, C×KH×KW]
+    Tensor<1> d_biases;  // [F]
+
+    Tensor<4> forward(const Tensor<4> &input_batch);
+    Tensor<4> backward(const Tensor<4> &d_out);
 
 private:
-    vector<float> bias;
+    void im2col_batch(const Tensor<4> &input, Tensor<2> &out);
+    void col2im_batch(const Tensor<2> &col, Tensor<4> &out);
+    void im2col_batch_cuda(const CudaTensor<4>& input, CudaTensor<2>& output_col);
+    void col2im_batch_cuda(const CudaTensor<2>& col, CudaTensor<4>& input_grad);
 };

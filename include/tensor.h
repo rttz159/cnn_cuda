@@ -114,6 +114,10 @@ public:
         return data.size();
     }
 
+    void fill(float x) {
+        std::fill(data.begin(), data.end(), x);
+    }
+
     // Matrix Multiplication for rank 2 tensor
     static Tensor<2> matmul(const Tensor<2> &A, const Tensor<2> &B)
     {

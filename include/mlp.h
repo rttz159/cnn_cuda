@@ -46,17 +46,15 @@ public:
         this->layer_sizes = layers_size;
         this->batch_size = batch_size;
         this->cudaEnabled = cudaEnabled;
-        initialize_input_output();
-        initialize_weights_and_biases();
-        initialize_activations();
-        initialize_deltas();
+        initialize_network();
     }
 
     void forward();
     void backward();
     Tensor<2> fw(const Tensor<2>& input) override;
     Tensor<2> bp(const Tensor<2>& grad_output) override;
-    void update_weights(float learning_rate) override;
+    CudaTensor<2> fw_cuda(const CudaTensor<2> &input) override;
+    CudaTensor<2> bp_cuda(const CudaTensor<2> &grad_output) override;
 
     void set_input(const std::vector<std::vector<float>> &input_batch);
     void set_desire_output(const std::vector<std::vector<float>> &output_batch);
