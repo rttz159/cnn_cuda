@@ -112,6 +112,22 @@ __global__ void reduce_columns_kernel(
     output[f] = sum;
 }
 
+__global__ void apply_mask_to_rows(float* data, const float* mask, size_t B, size_t C) {
+    size_t row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row >= B) return;
+
+    float m = mask[row];
+    for (size_t col = 0; col < C; ++col) {
+        data[row * C + col] *= m;
+    }
+}
+
+__global__ void update_bias_kernel(float* bias, const float* grad, float lr, int batch_size, int F) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < F) {
+        bias[i] -= lr * grad[i] / batch_size;
+    }
+}
 
 void apply_leaky_ReLu_cuda(CudaTensor<2>& input, CudaTensor<2>& output) {
     size_t size = input.size();
@@ -228,7 +244,7 @@ void reduce_rows_cuda(CudaTensor<2>& input, CudaTensor<2>& output) {
     }
 }
 
-void update_weights_cuda(CudaTensor<2>& W, const CudaTensor<2>& grad, float lr, float batch_size_float) {
+void update_weights_cuda(CudaTensor<2>& W, CudaTensor<2>& grad, float lr, float batch_size_float) {
     if (W.size() != grad.size()) {
         throw std::invalid_argument("update_weights: size mismatch between weight and gradient tensors");
     }
@@ -276,4 +292,24 @@ float compute_loss_gpu(const CudaTensor<2>& prediction,
     delete[] h_loss_buffer;
 
     return average_loss;
+}
+
+void apply_mask_to_rows_cuda(CudaTensor<2>& tensor, CudaTensor<1>& mask) {
+    size_t B = tensor.get_shape()[0];
+    size_t C = tensor.get_shape()[1];
+
+    dim3 blockSize(128);
+    dim3 gridSize((B + blockSize.x - 1) / blockSize.x);
+
+    apply_mask_to_rows<<<gridSize, blockSize>>>(
+        tensor.data, mask.data, B, C
+    );
+    cudaDeviceSynchronize();
+}
+
+void update_bias_cuda(CudaTensor<1>& bias, const CudaTensor<1>& grad, float lr, int B) {
+    int F = bias.get_shape()[0];
+    int blockSize = 256;
+    int gridSize = (F + blockSize - 1) / blockSize;
+    update_bias_kernel<<<gridSize, blockSize>>>(bias.data, grad.data, lr, B, F);
 }

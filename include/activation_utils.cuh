@@ -40,6 +40,10 @@ __global__ void broadcast_bias_to_matrix_kernel(const float* __restrict__ bias, 
 
 __global__ void reduce_columns_kernel(const float* __restrict__ input, float* __restrict__ output, size_t rows, size_t cols);
 
+__global__ void apply_mask_to_rows(float* data, const float* mask, size_t B, size_t C);
+
+__global__ void update_bias_kernel(float* bias, const float* grad, float lr, int batch_size, int F);
+
 void apply_leaky_ReLu_cuda(CudaTensor<2>& input, CudaTensor<2>& output);
 void apply_leaky_ReLu_derivative_cuda(CudaTensor<2>& input, CudaTensor<2>& output);
 void apply_sigmoid_cuda(CudaTensor<2>& input, CudaTensor<2>& output);
@@ -48,5 +52,7 @@ void broadcast_to_rows_cuda(const CudaTensor<2>& src, CudaTensor<2>& dst);
 void broadcast_bias_cuda(const CudaTensor<1>& bias, CudaTensor<2>& out);
 void reduce_rows_cuda(CudaTensor<2>& input, CudaTensor<2>& output);
 void reduce_columns_cuda(const CudaTensor<2>& input, CudaTensor<1>& output);
-void update_weights_cuda(CudaTensor<2>& W, const CudaTensor<2>& grad, float lr, float batch_size_float) ;
+void update_weights_cuda(CudaTensor<2>& W, CudaTensor<2>& grad, float lr, float batch_size_float) ;
 float compute_loss_gpu(const CudaTensor<2>& prediction, const CudaTensor<2>& target);
+void apply_mask_to_rows_cuda(CudaTensor<2>& tensor, CudaTensor<1>& mask);
+void update_bias_cuda(CudaTensor<1>& bias, const CudaTensor<1>& grad, float lr, int B);

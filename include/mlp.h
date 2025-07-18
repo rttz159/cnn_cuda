@@ -16,8 +16,9 @@ class MultiLayerPerceptron
 {
 public:
     bool cudaEnabled;
-    double learning_rate ;
+    double learning_rate = 0.1;
     int batch_size;
+    float last_loss_gpu = 0.0f;
 
     std::vector<int> layer_sizes;
 

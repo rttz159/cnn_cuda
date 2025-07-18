@@ -63,6 +63,7 @@ public:
     int batch_size;
     int in_channels, out_channels;
     int kernel_size, stride, padding;
+    float learning_rate = 0.1;
 
     Tensor<2> weights; // [F, C×KH×KW]
     Tensor<1> biases;  // [F]

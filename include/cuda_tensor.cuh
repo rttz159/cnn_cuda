@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <vector>
 #include <array>
+#include "tensor.h"
 
 #define TILE_WIDTH 32
 
@@ -127,6 +128,12 @@ public:
         this->data = source.data; 
         this->total_size = source.size();
         compute_strides(); 
+    }
+
+    Tensor<N> to_host() const {
+        Tensor<N> cpu_tensor = Tensor<N>::from_shape_vector(get_shape_vector());
+        copy_to_host(cpu_tensor.raw_data_arr());
+        return cpu_tensor;
     }
 
     std::vector<size_t> get_shape_vector() const {

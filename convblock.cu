@@ -346,6 +346,14 @@ Tensor<4> ConvBlock::bp(Tensor<4>& d_out) {
     // d_input_cols = Transposed Weight * d_pre_acts_flat
     Tensor<2> d_input_cols = Tensor<2>::matmul(Tensor<2>::transpose(weights), d_pre_acts_flat);
 
+    for (int i = 0; i < weights.get_shape()[0]; ++i)
+        for (int j = 0; j < weights.get_shape()[1]; ++j)
+            weights(i, j) -= learning_rate * d_weights(i, j);
+
+    for (int i = 0; i < biases.get_shape()[0]; ++i)
+        biases(i) -= learning_rate * d_biases(i);
+
+
     Tensor<4> d_input({static_cast<size_t>(B),
                    static_cast<size_t>(C),
                    static_cast<size_t>(H),
@@ -426,6 +434,9 @@ CudaTensor<4> ConvBlock::bp_cuda(CudaTensor<4>& d_out) {
     CudaTensor<1> db({static_cast<size_t>(F)});
     reduce_columns_cuda(d_pre_acts, db);
     d_biases_cuda = db;
+
+    update_weights_cuda(weights_cuda, d_weights_cuda, learning_rate,B);
+    update_bias_cuda(biases_cuda, d_biases_cuda, learning_rate, B);
 
     // Gradient for input_cols: dX = weights^T * d_pre_acts
     CudaTensor<2> d_cols({static_cast<size_t>(C * K * K), static_cast<size_t>(B * OH * OW)});

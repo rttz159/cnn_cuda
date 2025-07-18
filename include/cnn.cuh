@@ -1,9 +1,10 @@
 #pragma once
 
 #include "convblock.cuh"
-#include "mlp.h" // MultiLayerPerceptron class
+#include "mlp.h"
 #include "tensor.h"
 #include "cuda_tensor.cuh"
+#include "activation_utils.cuh"
 #include <vector>
 #include <stdexcept>
 
@@ -45,52 +46,21 @@ public:
     }
 
     Tensor<2> forward(Tensor<4>& input) {
-        std::cout << "[Forward] Input: ";
-        input.print_shape();
-
         Tensor<4> out1 = conv1->fw(input);
-        std::cout << "[Forward] After Conv1: ";
-        out1.print_shape();
-
         Tensor<4> out2 = conv2->fw(out1);
-        std::cout << "[Forward] After Conv2: ";
-        out2.print_shape();
-
         Tensor<2> flattened = flatten(out2);
-        std::cout << "[Forward] Flattened: ";
-        flattened.print_shape();
-
         Tensor<2> out = mlp->fw(flattened);
-        std::cout << "[Forward] MLP Output: ";
-        out.print_shape();
 
         return out;
     }
 
     Tensor<2> backward(Tensor<2>& d_out) {
-        std::cout << "[Backward] Loss gradient d_out: ";
-        d_out.print_shape();
-
         Tensor<2> d_flatten = mlp->bp(d_out);
-        std::cout << "[Backward] After MLP BP: ";
-        d_flatten.print_shape();
-
         Tensor<4> d_flattened = unflatten(d_flatten);
-        std::cout << "[Backward] After Unflatten: ";
-        d_flattened.print_shape();
-
         Tensor<4> d_conv2 = conv2->bp(d_flattened);
-        std::cout << "[Backward] After Conv2 BP: ";
-        d_conv2.print_shape();
-
         Tensor<4> d_conv1 = conv1->bp(d_conv2);
-        std::cout << "[Backward] After Conv1 BP: ";
-        d_conv1.print_shape();
-
         std::array<size_t, 2> flat_shape = {d_conv1.get_shape()[0], d_conv1.size() / d_conv1.get_shape()[0]};
         Tensor<2> final_out = d_conv1.reshape<2>(flat_shape);
-        std::cout << "[Backward] Final reshaped output: ";
-        final_out.print_shape();
 
         return final_out;
     }
@@ -98,27 +68,40 @@ public:
     CudaTensor<2> forward_cuda(CudaTensor<4>& input) {
         CudaTensor<4> out1 = conv1->fw_cuda(input);
         CudaTensor<4> out2 = conv2->fw_cuda(out1);
-        std::array<size_t, 2> flat_shape = {static_cast<size_t>(batch_size), static_cast<size_t>(flattened_dim)};
-        CudaTensor<2> flattened(flat_shape);
+
+        size_t B = out2.get_shape()[0];
+        size_t C = out2.get_shape()[1];
+        size_t H = out2.get_shape()[2];
+        size_t W = out2.get_shape()[3];
+
+        CudaTensor<2> flattened({B, C * H * W});
         flattened.reshape_from(out2);
+
         return mlp->fw_cuda(flattened);
     }
 
-    CudaTensor<2> backward_cuda(CudaTensor<2>& d_out) {
+    CudaTensor<2> backward_cuda(CudaTensor<2>& d_out, Tensor<1>& mask){
+        CudaTensor<1> mask_cuda(mask.get_shape());
+        apply_mask_to_rows_cuda(d_out, mask_cuda);
         CudaTensor<2> d_hidden = mlp->bp_cuda(d_out);
-        CudaTensor<4> d_flattened(std::array<size_t, 4>{
-            static_cast<size_t>(batch_size),
-            32,                   
-            static_cast<size_t>(out_h2),
-            static_cast<size_t>(out_w2)
-        });
+        size_t B = d_hidden.get_shape()[0];
+        size_t flat_dim = d_hidden.get_shape()[1];
+        size_t H = static_cast<size_t>(out_h2);
+        size_t W = static_cast<size_t>(out_w2);
+        size_t C = flat_dim / (H * W);
+
+        CudaTensor<4> d_flattened({B, C, H, W});
         d_flattened.reshape_from(d_hidden);
+
         CudaTensor<4> d_conv2 = conv2->bp_cuda(d_flattened);
-        CudaTensor<2> output(std::array<size_t, 2>{
-            static_cast<size_t>(batch_size),
-            static_cast<size_t>(in_channels * in_height * in_width)
-        });
-        output.reshape_from(conv1->bp_cuda(d_conv2));
+        CudaTensor<4> d_conv1 = conv1->bp_cuda(d_conv2);
+        size_t IC = static_cast<size_t>(in_channels);
+        size_t IH = static_cast<size_t>(in_height);
+        size_t IW = static_cast<size_t>(in_width);
+
+        CudaTensor<2> output({B, IC * IH * IW});
+        output.reshape_from(d_conv1);
+
         return output;
     }
 
