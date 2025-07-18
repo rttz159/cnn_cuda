@@ -82,3 +82,11 @@ __global__ void kernel_subtract(const float *A, const float *B, float *C, size_t
         C[idx] = A[idx] - B[idx];
     }
 }
+
+__global__ void kernel_elementwise_multiply(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, size_t size)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        C[idx] = A[idx] * B[idx];
+    }
+}

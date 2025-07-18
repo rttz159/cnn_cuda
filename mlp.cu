@@ -48,24 +48,6 @@ void MultiLayerPerceptron::print_network_details() const
               << std::endl;
 }
 
-void print_tensor2D(const CudaTensor<2>& tensor, const std::string& name = "Tensor") {
-    const size_t* shape = tensor.get_shape();
-    size_t rows = shape[0];
-    size_t cols = shape[1];
-
-    std::vector<float> host_data(rows * cols);
-    tensor.copy_to_host(host_data.data());
-
-    std::cout << name << " (" << rows << "x" << cols << "):\n";
-    for (size_t i = 0; i < rows; ++i) {
-        std::cout << "[ ";
-        for (size_t j = 0; j < cols; ++j) {
-            std::cout << host_data[i * cols + j] << " ";
-        }
-        std::cout << "]\n";
-    }
-}
-
 void MultiLayerPerceptron::forward()
 {
     if (cudaEnabled)
@@ -83,47 +65,11 @@ void MultiLayerPerceptron::forward()
             z_biased.elementwise_add(z, broadcast_bias);
 
             pre_activations_cuda[i] = z_biased;
-            apply_activation_cuda(pre_activations_cuda[i], activations_cuda[i]);
+            apply_sigmoid_cuda(pre_activations_cuda[i], activations_cuda[i]);
 
             current = activations_cuda[i];
         }
     }
-    // if (cudaEnabled)
-    // {
-    //     CudaTensor<2> current = input_cuda;
-
-    //     std::cout << "=== Forward Pass ===\n";
-    //     print_tensor2D(current);  // Input layer
-
-    //     for (size_t i = 0; i < layer_sizes.size() - 1; ++i)
-    //     {
-    //         std::cout << "\nLayer " << i << " Weights:\n";
-    //         print_tensor2D(weight_cuda[i]);
-    //         std::cout << "Layer " << i << " Biases:\n";
-    //         print_tensor2D(biases_cuda[i]);
-
-    //         std::cout << "\nLayer " << i << " Forward Pass:\n";
-
-    //         CudaTensor<2> z({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[i + 1])});
-    //         CudaTensor<2>::matmul_device(current, weight_cuda[i], z, false, true);
-    //         std::cout << "Z = input * W^T:\n";
-    //         print_tensor2D(z);
-
-    //         CudaTensor<2> z_biased({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[i + 1])});
-    //         CudaTensor<2> broadcast_bias({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[i + 1])});
-    //         broadcast_to_rows_cuda(biases_cuda[i], broadcast_bias);
-    //         z_biased.elementwise_add(z, broadcast_bias);
-    //         std::cout << "Z + bias:\n";
-    //         print_tensor2D(z_biased);
-
-    //         pre_activations_cuda[i] = z_biased;
-    //         apply_activation_cuda(pre_activations_cuda[i], activations_cuda[i]);
-    //         std::cout << "Activation output:\n";
-    //         print_tensor2D(activations_cuda[i]);
-
-    //         current = activations_cuda[i];
-    //     }
-    // }
     else
     {
         Tensor<2> current_activation = input;
@@ -149,12 +95,12 @@ void MultiLayerPerceptron::backward()
     if (cudaEnabled)
     {
         deltas_cuda.back().elementwise_subtract(activations_cuda.back(), desire_output_cuda);
-        apply_activation_derivative_cuda(pre_activations_cuda.back(), deltas_cuda.back());
+        apply_sigmoid_derivative_cuda(pre_activations_cuda.back(), deltas_cuda.back());
 
         for (int i = static_cast<int>(layer_sizes.size() - 3); i >= 0; --i)
         {   
             CudaTensor<2>::matmul_device(deltas_cuda[i + 1], weight_cuda[i + 1], deltas_cuda[i]);
-            apply_activation_derivative_cuda(pre_activations_cuda[i], deltas_cuda[i]);
+            apply_sigmoid_derivative_cuda(pre_activations_cuda[i], deltas_cuda[i]);
         }
 
         for (size_t i = 0; i < layer_sizes.size() - 1; ++i)
@@ -170,66 +116,6 @@ void MultiLayerPerceptron::backward()
             update_weights_cuda(biases_cuda[i], bias_grad, learning_rate, batch_size);
         }
     }
-    // if (cudaEnabled)
-    // {
-    //     std::cout << "\n=== Backward Pass ===\n";
-
-    //     deltas_cuda.back().elementwise_subtract(activations_cuda.back(), desire_output_cuda);
-    //     std::cout << "Output Layer Delta (after subtract):\n";
-    //     print_tensor2D(deltas_cuda.back());
-
-    //     apply_activation_derivative_cuda(pre_activations_cuda.back(), deltas_cuda.back());
-    //     std::cout << "Output Layer Delta (after activation derivative):\n";
-    //     print_tensor2D(deltas_cuda.back());
-    
-    //     for (int i = static_cast<int>(layer_sizes.size() - 3); i >= 0; --i)
-    //     {
-    //         std::cout << "\nLayer " << i << " Backward Pass:\n";
-    //         std::cout << "Before Matrix Mul:\n";
-    //         print_tensor2D(deltas_cuda[i]);
-
-    //         CudaTensor<2>::matmul_device(deltas_cuda[i + 1], weight_cuda[i + 1], deltas_cuda[i]);
-    //         std::cout << "After Matrix Mul (deltas[i+1] * W[i+1]):\n";
-    //         print_tensor2D(deltas_cuda[i]);
-
-    //         apply_activation_derivative_cuda(pre_activations_cuda[i], deltas_cuda[i]);
-    //         std::cout << "After Activation Derivative:\n";
-    //         print_tensor2D(deltas_cuda[i]);
-    //     }
-
-    //     for (size_t i = 0; i < layer_sizes.size() - 1; ++i)
-    //     {
-    //         CudaTensor<2> input_i = (i == 0) ? input_cuda : activations_cuda[i - 1];
-    //         CudaTensor<2> weight_grad({static_cast<size_t>(layer_sizes[i + 1]), static_cast<size_t>(layer_sizes[i])});
-    //         CudaTensor<2>::matmul_device(deltas_cuda[i], input_i, weight_grad, true, false);
-
-    //         std::cout << "Weight Grad for Layer " << i << ":\n";
-    //         print_tensor2D(weight_grad);
-
-    //         CudaTensor<2> bias_grad({1, static_cast<size_t>(layer_sizes[i + 1])});
-    //         reduce_rows_cuda(deltas_cuda[i], bias_grad);
-
-    //         std::cout << "Bias Grad for Layer " << i << ":\n";
-    //         print_tensor2D(bias_grad);
-
-    //         std::cout << "Weight Grad for Layer " << i << ":\n";
-    //         print_tensor2D(weight_grad);
-    //         std::cout << "Bias Grad for Layer " << i << ":\n";
-    //         print_tensor2D(bias_grad);
-
-    //         std::cout << "Weights BEFORE update (Layer " << i << "):\n";
-    //         print_tensor2D(weight_cuda[i]);
-    //         update_weights_cuda(weight_cuda[i], weight_grad, learning_rate, batch_size);
-    //         std::cout << "Weights AFTER update (Layer " << i << "):\n";
-    //         print_tensor2D(weight_cuda[i]);
-            
-    //         std::cout << "Biases BEFORE update (Layer " << i << "):\n";
-    //         print_tensor2D(biases_cuda[i]);
-    //         update_weights_cuda(biases_cuda[i], bias_grad, learning_rate, batch_size);
-    //         std::cout << "Biases AFTER update (Layer " << i << "):\n";
-    //         print_tensor2D(biases_cuda[i]);
-    //     }
-    // }
     else
     {
         // Calculate delta for the output layer
@@ -277,28 +163,36 @@ void MultiLayerPerceptron::backward()
     }
 }
 
-Tensor<2> MultiLayerPerceptron::fw(const Tensor<2>& input) {
+Tensor<2> MultiLayerPerceptron::fw(Tensor<2>& input) {
     this->input = input;
     forward();
     return activations.back();
 }
 
-Tensor<2> MultiLayerPerceptron::bp(const Tensor<2>& grad_output) {
+Tensor<2> MultiLayerPerceptron::bp(Tensor<2>& grad_output) {
     this->desire_output = grad_output;
-    backward();
-    return deltas.front();
+    backward(); 
+
+    Tensor<2> grad_input({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0])});
+    grad_input = Tensor<2>::matmul(deltas[0], weight[0]);
+
+    return grad_input; 
 }
 
-CudaTensor<2> MultiLayerPerceptron::fw_cuda(const CudaTensor<2>& input) {
+CudaTensor<2> MultiLayerPerceptron::fw_cuda(CudaTensor<2>& input) {
     this->input_cuda = input;
     forward();
     return activations_cuda.back();
 }
 
-CudaTensor<2> MultiLayerPerceptron::bp_cuda(const CudaTensor<2>& grad_output) {
+CudaTensor<2> MultiLayerPerceptron::bp_cuda(CudaTensor<2>& grad_output) {
     this->desire_output_cuda = grad_output;
     backward();
-    return deltas_cuda.front();
+
+    CudaTensor<2> grad_input({static_cast<size_t>(batch_size), static_cast<size_t>(layer_sizes[0])});
+    CudaTensor<2>::matmul_device(deltas_cuda[0], weight_cuda[0], grad_input, false, false);
+
+    return grad_input;
 }
 
 void MultiLayerPerceptron::set_input(const std::vector<std::vector<float>> &input_batch)

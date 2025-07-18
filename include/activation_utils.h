@@ -5,14 +5,15 @@
 
 namespace Activation {
 
-    inline Tensor<3> leaky_relu(const Tensor<3>& x)
+    inline Tensor<4> leaky_relu(const Tensor<4>& x)
     {
-        const auto shape = x.get_shape();
-        Tensor<3> result(shape);
-        for (size_t d = 0; d < shape[0]; ++d)
-            for (size_t h = 0; h < shape[1]; ++h)
-                for (size_t w = 0; w < shape[2]; ++w)
-                    result(d, h, w) = x(d, h, w) > 0.0f ? x(d, h, w) : ALPHA * x(d, h, w);
+        const auto shape = x.get_shape(); // [N, C, H, W]
+        Tensor<4> result(shape);
+        for (size_t n = 0; n < shape[0]; ++n)
+            for (size_t c = 0; c < shape[1]; ++c)
+                for (size_t h = 0; h < shape[2]; ++h)
+                    for (size_t w = 0; w < shape[3]; ++w)
+                        result(n, c, h, w) = x(n, c, h, w) > 0.0f ? x(n, c, h, w) : ALPHA * x(n, c, h, w);
         return result;
     }
 
@@ -52,14 +53,15 @@ namespace Activation {
         return grad;
     }
 
-    inline Tensor<3> leaky_relu_derivative(const Tensor<3>& x)
+    inline Tensor<4> leaky_relu_derivative(const Tensor<4>& x)
     {
-        const auto shape = x.get_shape();
-        Tensor<3> grad(shape);
-        for (size_t d = 0; d < shape[0]; ++d)
-            for (size_t h = 0; h < shape[1]; ++h)
-                for (size_t w = 0; w < shape[2]; ++w)
-                    grad(d, h, w) = x(d, h, w) > 0.0f ? 1.0f : ALPHA;
+        const auto shape = x.get_shape(); // [N, C, H, W]
+        Tensor<4> grad(shape);
+        for (size_t n = 0; n < shape[0]; ++n)
+            for (size_t c = 0; c < shape[1]; ++c)
+                for (size_t h = 0; h < shape[2]; ++h)
+                    for (size_t w = 0; w < shape[3]; ++w)
+                        grad(n, c, h, w) = x(n, c, h, w) > 0.0f ? 1.0f : ALPHA;
         return grad;
     }
 

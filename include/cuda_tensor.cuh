@@ -7,18 +7,22 @@
 #include <iostream>
 #include <numeric>
 #include <algorithm>
+#include <vector>
+#include <array>
 
 #define TILE_WIDTH 32
 
-__global__ void tiled_mat_mul_kernel(float *A, float *B, float *C,
+__global__ void tiled_mat_mul_kernel(float* __restrict__ A, float* __restrict__ B, float* __restrict__ C,
                                      int N1, int N2, int N3,
                                      bool transpose_A, bool transpose_B);
 
-__global__ void kernel_add(const float *A, const float *B, float *C, size_t size);
+__global__ void kernel_add(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, size_t size);
 
-__global__ void kernel_subtract(const float *A, const float *B, float *C, size_t size);
+__global__ void kernel_subtract(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, size_t size);
 
-__global__ void kernel_scalar_mul(const float *A, float *C, float scalar, size_t size);
+__global__ void kernel_scalar_mul(const float* __restrict__ A, float* __restrict__ C, float scalar, size_t size);
+
+__global__ void kernel_elementwise_multiply(const float* __restrict__ A, const float* __restrict__ B, float* __restrict__ C, size_t size);
 
 template <int N>
 class CudaTensor
@@ -62,6 +66,19 @@ public:
         cudaMemcpy(data, other.data, total_size * sizeof(float), cudaMemcpyDeviceToDevice);
     }
 
+    CudaTensor(const std::array<size_t, N>& shape_array)
+    {
+        for (int i = 0; i < N; ++i)
+        {
+            shape[i] = shape_array[i];
+            total_size *= shape[i];
+        }
+
+        compute_strides();
+
+        cudaMalloc(&data, total_size * sizeof(float));
+        cudaMemset(data, 0, total_size * sizeof(float));
+    }
 
     ~CudaTensor()
     {
@@ -79,7 +96,7 @@ public:
         cudaMemcpy(host_data, data, total_size * sizeof(float), cudaMemcpyDeviceToHost);
     }
 
-    void resize(const size_t (&new_shape)[N]) {
+    void resize(const std::array<size_t, N>& new_shape) {
         size_t new_total = 1;
         for (int i = 0; i < N; ++i) new_total *= new_shape[i];
 
@@ -88,8 +105,32 @@ public:
             cudaMalloc(&data, new_total * sizeof(float));
             total_size = new_total;
         }
-        std::copy(new_shape, new_shape + N, shape);
+
+        std::copy(new_shape.begin(), new_shape.end(), shape);
         compute_strides();
+    }
+
+    void reshape_from(const CudaTensor<2>& flat) {
+        if (flat.size() != this->size()) {
+            throw std::runtime_error("reshape_from: total size mismatch between flat and 4D tensor");
+        }
+
+        this->data = flat.data;
+        this->total_size = flat.size();
+        compute_strides(); 
+    }
+
+    void reshape_from(const CudaTensor<4>& source) {
+        if (source.size() != this->size())
+            throw std::runtime_error("reshape_from: mismatched size");
+
+        this->data = source.data; 
+        this->total_size = source.size();
+        compute_strides(); 
+    }
+
+    std::vector<size_t> get_shape_vector() const {
+        return std::vector<size_t>(shape, shape + N);
     }
 
     size_t flat_index(const size_t (&indices)[N]) const
@@ -112,7 +153,6 @@ public:
     const size_t *get_shape() const { return shape; }
     const size_t *get_strides() const { return strides; }
 
-    // Element-wise addition: this = A + B
     void elementwise_add(const CudaTensor<N> &A, const CudaTensor<N> &B)
     {
         if (A.total_size != B.total_size || A.total_size != total_size)
@@ -135,7 +175,17 @@ public:
         cudaDeviceSynchronize();
     }
 
-    // Scalar multiplication: this = A * scalar
+    void elementwise_multiply(const CudaTensor<N> &A, const CudaTensor<N> &B)
+    {
+        if (A.total_size != B.total_size || A.total_size != total_size)
+            throw std::invalid_argument("Size mismatch for multiplication");
+
+        size_t threads = 256;
+        size_t blocks = (total_size + threads - 1) / threads;
+        kernel_elementwise_multiply<<<blocks, threads>>>(A.data, B.data, this->data, total_size);
+        cudaDeviceSynchronize();
+    }
+
     void scalar_multiply(const CudaTensor<N> &A, float scalar)
     {
         if (A.total_size != total_size)
@@ -147,7 +197,6 @@ public:
         cudaDeviceSynchronize();
     }
 
-    // Matrix multiplication: C = A * B
     static void matmul_device(const CudaTensor<2> &A, const CudaTensor<2> &B, CudaTensor<2> &C, bool transpose_A = false, bool transpose_B = false)
     {
         size_t N1 = transpose_A ? A.get_shape()[1] : A.get_shape()[0];
@@ -178,7 +227,6 @@ public:
     {
         if (this == &other) return *this; 
 
-        // Free existing data
         if (data)
             cudaFree(data);
 

@@ -48,6 +48,16 @@ public:
         }
         data = values;
     }
+    static Tensor<N> from_shape_vector(const std::vector<size_t> &shape_vec)
+    {
+        if (shape_vec.size() != N)
+            throw std::invalid_argument("Shape vector size does not match tensor rank");
+
+        std::array<size_t, N> shape_array;
+        std::copy(shape_vec.begin(), shape_vec.end(), shape_array.begin());
+
+        return Tensor<N>(shape_array);
+    }
 
     // Compute flat index
     size_t index(const std::array<size_t, N> &indices) const
@@ -116,6 +126,27 @@ public:
 
     void fill(float x) {
         std::fill(data.begin(), data.end(), x);
+    }
+
+    void print_shape() const {
+        std::cout << "[";
+        for (size_t i = 0; i < shape.size(); ++i) {
+            std::cout << shape[i];
+            if (i < shape.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    template <size_t NewRank>
+    Tensor<NewRank> reshape(const std::array<size_t, NewRank>& new_shape) const {
+        size_t new_total_size = 1;
+        for (auto s : new_shape)
+            new_total_size *= s;
+
+        if (new_total_size != data.size())
+            throw std::invalid_argument("New shape must contain the same total number of elements.");
+
+        return Tensor<NewRank>(new_shape, data);
     }
 
     // Matrix Multiplication for rank 2 tensor
@@ -274,7 +305,7 @@ private:
     void compute_strides()
     {
         strides[N - 1] = 1;
-        for (int i = N - 2; i >= 0; --i)
+        for (int i = static_cast<int>(N) - 2; i >= 0; --i)
         {
             strides[i] = strides[i + 1] * shape[i + 1];
         }
