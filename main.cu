@@ -86,7 +86,7 @@ int main() {
     const int in_channels = 3;
     const int in_height = 32;
     const int in_width = 32;
-    const int num_classes = 10;
+    const int num_classes = 2;
     const bool use_cuda = true;
 
     // Load Dataset
