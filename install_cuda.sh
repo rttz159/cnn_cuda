@@ -8,18 +8,15 @@ sudo apt install -y build-essential libopencv-dev ninja-build
 echo "=== Adding NVIDIA CUDA repo key ==="
 wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
-rm cuda-keyring_1.1-1_all.deb
-
-echo "=== Updating package list ==="
 sudo apt-get update
 
 echo "=== Installing CUDA Toolkit 12.4 ==="
-sudo apt-get install -y cuda-toolkit-12-4
+sudo apt-get -y install cuda-toolkit-12-9
 
-echo "=== Updating environment variables ==="
-if ! grep -q "cuda-12.4/bin" ~/.bashrc; then
-    echo 'export PATH=/usr/local/cuda-12.4/bin:$PATH' >> ~/.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+echo "=== Updating environment variables for CUDA 12.9 ==="
+if ! grep -q "cuda-12.9/bin" ~/.bashrc; then
+    echo 'export PATH=/usr/local/cuda-12.9/bin:$PATH' >> ~/.bashrc
+    echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
 fi
 
 echo "=== Reloading ~/.bashrc ==="
