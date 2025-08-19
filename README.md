@@ -1,4 +1,4 @@
-### Installation Instruction
+### Instruction to Run
 
 Run wsl and install this specific Ubuntu distro.
 ```
