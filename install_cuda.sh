@@ -10,6 +10,9 @@ wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/
 sudo dpkg -i cuda-keyring_1.1-1_all.deb
 sudo apt-get update
 
+echo "=== Installing CMake ==="
+sudo apt install cmake
+
 echo "=== Installing CUDA Toolkit 12.9 ==="
 sudo apt-get -y install cuda-toolkit-12-9
 
