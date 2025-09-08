@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <chrono>
 
 #define MNIST_TRAIN_LEN 60000
 #define MNIST_TEST_LEN 10000

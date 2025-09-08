@@ -2,6 +2,8 @@
 #include <fstream>
 #include <omp.h>
 
+using namespace std;
+
 int MNIST::ReverseInt(int i) {
     unsigned char ch1, ch2, ch3, ch4;
     ch1 = i & 255;
@@ -75,6 +77,7 @@ void MNIST::get_mnist(
     std::vector<std::vector<float>>& Test_DS, std::vector<int>& Test_L) {
 
     std::cout << "\nLoading MNIST dataset...\n" << std::endl;
+    auto load_start = chrono::high_resolution_clock::now();
 
     read_images("MNIST_data/train-images.idx3-ubyte", MNIST_TRAIN_LEN, MNIST_IMAGE_SIZE, Train_DS);
     read_labels("MNIST_data/train-labels.idx1-ubyte", MNIST_TRAIN_LEN, Train_L);
@@ -82,5 +85,8 @@ void MNIST::get_mnist(
     read_images("MNIST_data/t10k-images.idx3-ubyte", MNIST_TEST_LEN, MNIST_IMAGE_SIZE, Test_DS);
     read_labels("MNIST_data/t10k-labels.idx1-ubyte", MNIST_TEST_LEN, Test_L);
 
-    std::cout << "Done loading MNIST!" << std::endl;
+    auto load_end = chrono::high_resolution_clock::now();
+    chrono::duration<double> load_time = load_end - load_start;
+
+    std::cout << "Done loading MNIST!\n" << "Loading time: " << load_time.count() << " seconds\n" << std::endl;
 }
