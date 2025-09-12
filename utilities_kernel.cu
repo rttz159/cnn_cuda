@@ -270,13 +270,6 @@ __global__ void compute_bias_grad_kernel(const float* delta, float* grad_bias, i
     grad_bias[k] = float(sum / denom);
 }
 
-__global__ void scale_array(float* data, float scale, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        data[idx] *= scale;
-    }
-}
-
 void device_matrix_mul(const float *A, const float *B, float *C,
                        int N1, int N2, int N3)
 {
@@ -451,13 +444,5 @@ void compute_bias_grad(const float* delta, float* grad_bias, int N, int K, int o
     int threads = 256;
     int blocks = (K + threads - 1) / threads;
     compute_bias_grad_kernel<<<blocks, threads, 0, 0>>>(delta, grad_bias, N, K, out_hw);
-    CUDA_CHECK(cudaGetLastError());
-}
-
-void scale_array_host(float* d_data, float scale, int size) {
-    int threads = 256;
-    int blocks = (size + threads - 1) / threads;
-
-    scale_array<<<blocks, threads>>>(d_data, scale, size);
     CUDA_CHECK(cudaGetLastError());
 }

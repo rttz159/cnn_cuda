@@ -34,5 +34,3 @@ void add_bias_per_filter(float* Z, const float* b, int N, int K, int out_hw);
 void add_inplace(float* dst, const float* src, int size);
 
 void compute_bias_grad(const float* delta, float* grad_bias, int N, int K, int out_hw);
-
-void scale_array_host(float* d_data, float scale, int size);

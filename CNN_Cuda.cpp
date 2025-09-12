@@ -41,56 +41,6 @@ std::vector<std::vector<float>> CNN_CUDA::get_outputs() {
     return mlp_layer->get_outputs();
 }
 
-// std::vector<std::vector<float>> CNN_CUDA::flatten(const std::vector<std::vector<float>>& x) {
-//     std::vector<std::vector<float>> flat(x.size());
-//     for (size_t n = 0; n < x.size(); n++) {
-//         flat[n].reserve(x[n].size());
-//         for (auto v : x[n]) flat[n].push_back(v);
-//     }
-//     return flat;
-// }
-
-// std::vector<std::vector<float>> CNN_CUDA::unflatten(
-//     const std::vector<std::vector<float>>& x, int C, int H, int W) 
-// {
-//     std::vector<std::vector<float>> unflat(x.size(), std::vector<float>(C*H*W));
-//     for (size_t n = 0; n < x.size(); n++) {
-//         for (size_t i = 0; i < x[n].size(); i++) {
-//             unflat[n][i] = x[n][i];
-//         }
-//     }
-//     return unflat;
-// }
-
-// float CNN_CUDA::train_batch(const std::vector<std::vector<float>>& inputs,
-//                            const std::vector<int>& labels) 
-// {
-//     size_t current_batch_size = inputs.size();
-
-//     run(inputs);
-    
-//     size_t num_classes = mlp_layer->get_outputs()[0].size();
-//     std::vector<std::vector<float>> target(current_batch_size, std::vector<float>(num_classes, 0.0f));
-//     for (size_t i = 0; i < current_batch_size; i++) {
-//         target[i][labels[i]] = 1.0f;
-//     }
-
-//     std::vector<std::vector<float>> grad(current_batch_size, std::vector<float>(num_classes));
-//     float loss = 0.0f;
-//     auto outputs = mlp_layer->get_outputs();
-//     for (size_t i = 0; i < current_batch_size; i++) {
-//         for (size_t j = 0; j < num_classes; j++) {
-//             float diff = outputs[i][j] - target[i][j];
-//             grad[i][j] = 2.0f * diff / current_batch_size; 
-//             loss += diff * diff;
-//         }
-//     }
-//     loss /= current_batch_size;
-
-//     bp(grad);
-//     return loss;
-// }
-
 std::vector<std::vector<float>> CNN_CUDA::flatten(const std::vector<std::vector<float>>& x) {
     std::vector<std::vector<float>> flat(x.size());
     #pragma omp parallel for
