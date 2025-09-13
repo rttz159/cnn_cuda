@@ -4,7 +4,6 @@ project(CNN LANGUAGES CXX CUDA)
 
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenMP REQUIRED)
-find_package(MPI REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
