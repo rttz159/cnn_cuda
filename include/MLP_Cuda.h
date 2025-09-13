@@ -39,6 +39,11 @@ public:
     std::vector<std::vector<float>> outputs;
     std::vector<std::vector<float>> d_input;
 
+    cudaStream_t s_grad;
+    cudaStream_t s_adamA, s_adamB;
+
+    cudaEvent_t ev_grads_done;
+
     float* d_error_buf = nullptr;
     float* d_sig_buf   = nullptr;
     float* d_tmp_buf   = nullptr;

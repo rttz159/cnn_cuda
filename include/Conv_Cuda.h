@@ -1,4 +1,5 @@
 #include "utilities_kernel.h"
+#include <cuda_runtime.h>
 #include <vector>
 
 #ifndef BETA1
@@ -32,6 +33,10 @@ public:
 
     void resize_batch(int new_batch_size);
 
+    cudaStream_t stream;
+    cudaStream_t s_bias, s_gradW, s_backprop, s_adamW, s_adamB;
+    cudaEvent_t ev_bias, ev_gradW, ev_backprop;
+
     int C, H, W;          
     int K, F;      
     int stride, padding;
@@ -62,4 +67,6 @@ public:
 
     std::vector<std::vector<float>> outputs;
     std::vector<std::vector<float>> h_input_grad;
+
+
 };

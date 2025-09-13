@@ -17,7 +17,7 @@ int main() {
     float bias_dense = 1.0f;
     float eta_dense = 0.01f;
     int batch_size = 32;  
-    int epochs = 1;
+    int epochs = 10;
 
     Conv_CUDA* conv1 = new Conv_CUDA(1, 28, 28, 8, 3, 2, 0, eta_conv, batch_size, 0, bias_conv);
     Conv_CUDA* conv2 = new Conv_CUDA(8, 13, 13, 2, 3, 2, 0, eta_conv, batch_size, 0, bias_conv);

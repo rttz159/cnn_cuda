@@ -1,6 +1,8 @@
 #include "utilities_kernel.h"
 #include <cuda_runtime.h>
 #include <iostream>
+#include <cmath>
+#include <algorithm>
 
 #define CUDA_CHECK(call) do { cudaError_t err = call;  if (err != cudaSuccess) {  std::cout << "CUDA Error: " << cudaGetErrorString(err)  << " at " << __FILE__ << ":" << __LINE__ << std::endl;  exit(EXIT_FAILURE);  }  } while(0)
 
@@ -259,69 +261,122 @@ __global__ void compute_bias_grad_kernel(const float* delta, float* grad_bias, i
     int k = blockIdx.x * blockDim.x + threadIdx.x;
     if (k >= K) return;
 
-    double sum = 0.0;
-    int per_batch = K * out_hw;
-    for (int n = 0; n < N; ++n) {
-        const float* batch_ptr = delta + n * per_batch;
-        const float* begin = batch_ptr + k * out_hw;
-        for (int p = 0; p < out_hw; ++p) sum += begin[p];
+    const int total_elements = N * out_hw;
+    const float inv_denom = 1.0f / (float(N) * float(out_hw));
+
+    float sum = 0.0f;
+
+    const int stride = K;
+    const float* delta_k = delta + k;
+
+    int i = 0;
+    const int unroll_limit = total_elements - 3;
+
+    for (; i < unroll_limit; i += 4) {
+        sum += delta_k[i * stride];
+        sum += delta_k[(i + 1) * stride];
+        sum += delta_k[(i + 2) * stride];
+        sum += delta_k[(i + 3) * stride];
     }
-    double denom = double(N) * double(out_hw);
-    grad_bias[k] = float(sum / denom);
+
+    for (; i < total_elements; ++i) {
+        sum += delta_k[i * stride];
+    }
+
+    grad_bias[k] = sum * inv_denom;
 }
 
+__global__ void compute_bias_grad_kernel_shared(const float* delta, float* grad_bias, int N, int K, int out_hw) {
+    extern __shared__ float sdata[];
+
+    int k = blockIdx.x;
+    int tid = threadIdx.x;
+    int blockSize = blockDim.x;
+
+    if (k >= K) return;
+
+    const int total_elements = N * out_hw;
+    const float inv_denom = 1.0f / (float(N) * float(out_hw));
+
+    float sum = 0.0f;
+    const int stride = K;
+    const float* delta_k = delta + k;
+
+    for (int i = tid; i < total_elements; i += blockSize) {
+        sum += delta_k[i * stride];
+    }
+
+    sdata[tid] = sum;
+    __syncthreads();
+
+    if (blockSize >= 512) { if (tid < 256) sdata[tid] += sdata[tid + 256]; __syncthreads(); }
+    if (blockSize >= 256) { if (tid < 128) sdata[tid] += sdata[tid + 128]; __syncthreads(); }
+    if (blockSize >= 128) { if (tid < 64)  sdata[tid] += sdata[tid + 64];  __syncthreads(); }
+
+    if (tid < 32) {
+        if (blockSize >= 64) sdata[tid] += sdata[tid + 32];
+        __syncwarp();
+        if (blockSize >= 32) sdata[tid] += sdata[tid + 16];
+        __syncwarp();
+        if (blockSize >= 16) sdata[tid] += sdata[tid + 8];
+        __syncwarp();
+        if (blockSize >= 8)  sdata[tid] += sdata[tid + 4];
+        __syncwarp();
+        if (blockSize >= 4)  sdata[tid] += sdata[tid + 2];
+        __syncwarp();
+        if (blockSize >= 2)  sdata[tid] += sdata[tid + 1];
+        __syncwarp();
+    }
+
+    if (tid == 0) {
+        grad_bias[k] = sdata[0] * inv_denom;
+    }
+}
+
+/* ===================== Wrappers (stream-aware) ===================== */
+
 void device_matrix_mul(const float *A, const float *B, float *C,
-                       int N1, int N2, int N3)
+                       int N1, int N2, int N3, cudaStream_t stream)
 {
     dim3 block(TILE_WIDTH, TILE_WIDTH);
-    dim3 grid((N3 + TILE_WIDTH - 1) / TILE_WIDTH, (N1 + TILE_WIDTH - 1) / TILE_WIDTH);
+    dim3 grid((N3 + TILE_WIDTH - 1) / TILE_WIDTH,
+              (N1 + TILE_WIDTH - 1) / TILE_WIDTH);
 
     if (N1 <= 0 || N2 <= 0 || N3 <= 0) {
         std::cerr << "Invalid dims! N1=" << N1 << " N2=" << N2 << " N3=" << N3 << "\n";
         exit(EXIT_FAILURE);
     }
-    if (grid.x <= 0 || grid.y <= 0 || block.x <= 0 || block.y <= 0) {
-        std::cerr << "Invalid launch config!\n";
-        exit(EXIT_FAILURE);
-    }
 
-    tiled_mat_mul_kernel<<<grid, block>>>(A, B, C, N1, N2, N3);
+    tiled_mat_mul_kernel<<<grid, block, 0, stream>>>(A, B, C, N1, N2, N3);
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cout << "MatMul Kernel Launch Error: " << cudaGetErrorString(err) << "\n";
-        exit(EXIT_FAILURE); 
+        std::cerr << "MatMul Kernel Launch Error: " << cudaGetErrorString(err) << "\n";
+        exit(EXIT_FAILURE);
     }
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::cout << "MatMul Kernel Sync Error: " << cudaGetErrorString(err) << "\n";
-        exit(EXIT_FAILURE); 
-    }
+    // async: caller decides when to synchronize
 }
 
-void device_matrix_transpose(const float *input, float *output, int rows, int cols)
+void device_matrix_transpose(const float *input, float *output, int rows, int cols, cudaStream_t stream)
 {
     dim3 block(TILE_WIDTH, TILE_WIDTH);
     dim3 grid((cols + TILE_WIDTH - 1) / TILE_WIDTH, (rows + TILE_WIDTH - 1) / TILE_WIDTH);
 
-    transpose_kernel<<<grid, block>>>(input, output, rows, cols);
-     
+    transpose_kernel<<<grid, block, 0, stream>>>(input, output, rows, cols);
+
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         std::cout << "Transpose Kernel Launch Error: " << cudaGetErrorString(err) << "\n";
-    }
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::cout << "Transpose Kernel Sync Error: " << cudaGetErrorString(err) << "\n";
+        exit(EXIT_FAILURE);
     }
 }
 
-void add_bias(float* d_Z, const float* d_b, int batch_size, int layer_size) {
+void add_bias(float* d_Z, const float* d_b, int batch_size, int layer_size, cudaStream_t stream) {
     int total = batch_size * layer_size;
     int threadsPerBlock = 256;
     int blocks = (total + threadsPerBlock - 1) / threadsPerBlock;
 
-    add_bias_kernel<<<blocks, threadsPerBlock>>>(d_Z, d_b, batch_size, layer_size);
+    add_bias_kernel<<<blocks, threadsPerBlock, 0, stream>>>(d_Z, d_b, batch_size, layer_size);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         std::cerr << "CUDA add_bias_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
@@ -329,59 +384,74 @@ void add_bias(float* d_Z, const float* d_b, int batch_size, int layer_size) {
     }
 }
 
-void apply_sigmoid(const float* d_input, float* d_output, int size) {
+void apply_sigmoid(const float* d_input, float* d_output, int size, cudaStream_t stream) {
     int threadsPerBlock = 256;
     int blocks = (size + threadsPerBlock - 1) / threadsPerBlock;
 
-    sigmoid_kernel<<<blocks, threadsPerBlock>>>(d_input, d_output, size);
+    sigmoid_kernel<<<blocks, threadsPerBlock, 0, stream>>>(d_input, d_output, size);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        std::cerr << "CUDA apply_sigmoid_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+        std::cerr << "CUDA sigmoid_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
         exit(EXIT_FAILURE);
     }
 }
 
-void sigmoid_derivative(const float* d_input, float* d_output, int size) {
+void sigmoid_derivative(const float* d_input, float* d_output, int size, cudaStream_t stream) {
     int blockSize = 256;
     int numBlocks = (size + blockSize - 1) / blockSize;
-    kernel_sigmoid_derivative<<<numBlocks, blockSize>>>(d_input, d_output, size);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    kernel_sigmoid_derivative<<<numBlocks, blockSize, 0, stream>>>(d_input, d_output, size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA sigmoid_derivative launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void elementwise_multiply(const float* a, const float* b, float* out, int size) {
+void elementwise_multiply(const float* a, const float* b, float* out, int size, cudaStream_t stream) {
     int blockSize = 256;
     int numBlocks = (size + blockSize - 1) / blockSize;
-    kernel_elementwise_multiply<<<numBlocks, blockSize>>>(a, b, out, size);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    kernel_elementwise_multiply<<<numBlocks, blockSize, 0, stream>>>(a, b, out, size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA elementwise_multiply launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void adam_update(float* param, const float* grad,
-                 float* m, float* v,
+void adam_update(float* param, const float* grad, float* m, float* v,
                  float lr, float beta1, float beta2,
-                 float epsilon, int timestep, int size) {
+                 float epsilon, int timestep, int size, cudaStream_t stream) {
     float bias_correction1 = 1.0f - powf(beta1, timestep);
     float bias_correction2 = 1.0f - powf(beta2, timestep);
 
     int blockSize = 256;
     int numBlocks = (size + blockSize - 1) / blockSize;
 
-    kernel_adam_update<<<numBlocks, blockSize>>>(
+    kernel_adam_update<<<numBlocks, blockSize, 0, stream>>>(
         param, grad, m, v, lr, beta1, beta2, epsilon,
         bias_correction1, bias_correction2, size
     );
-    CUDA_CHECK(cudaDeviceSynchronize());
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA adam_update launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void mean_across_batch_reduction(const float* delta, float* grad_bias, int batch_size, int layer_size) {
-    int threads = 256;                     
+void mean_across_batch_reduction(const float* delta, float* grad_bias, int batch_size, int layer_size, cudaStream_t stream) {
+    int threads = 256;
     size_t shared_mem = threads * sizeof(float);
 
-    kernel_mean_across_batch_reduction<<<layer_size, threads, shared_mem>>>(delta, grad_bias, batch_size, layer_size);
-    CUDA_CHECK(cudaDeviceSynchronize());
+    kernel_mean_across_batch_reduction<<<layer_size, threads, shared_mem, stream>>>(delta, grad_bias, batch_size, layer_size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA mean_across_batch_reduction launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
 void im2col_wrapper(const float* d_input, float* d_output,
-                    int N, int C, int H, int W, int F, int pad, int stride)
+                    int N, int C, int H, int W, int F, int pad, int stride, cudaStream_t stream)
 {
     int out_h = (H + 2*pad - F) / stride + 1;
     int out_w = (W + 2*pad - F) / stride + 1;
@@ -390,13 +460,17 @@ void im2col_wrapper(const float* d_input, float* d_output,
     dim3 grid((N*out_h*out_w + block.x - 1)/block.x,
               (C*F*F + block.y - 1)/block.y);
 
-    im2col_kernel<<<grid, block>>>(d_input, d_output,
-                                   N,C,H,W,F,pad,stride,out_h,out_w);
-    CUDA_CHECK(cudaGetLastError());
+    im2col_kernel<<<grid, block, 0, stream>>>(d_input, d_output,
+                                             N,C,H,W,F,pad,stride,out_h,out_w);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA im2col_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
 void col2im_wrapper(const float* d_input_col, float* d_output,
-                    int N, int C, int H, int W, int F, int pad, int stride)
+                    int N, int C, int H, int W, int F, int pad, int stride, cudaStream_t stream)
 {
     int total = N * C * H * W;
     int threads = 256;
@@ -405,44 +479,83 @@ void col2im_wrapper(const float* d_input_col, float* d_output,
     int out_h = (H + 2*pad - F) / stride + 1;
     int out_w = (W + 2*pad - F) / stride + 1;
 
-    col2im_kernel<<<blocks, threads>>>(d_input_col, d_output,
-                                       N,C,H,W,F,pad,stride,out_h,out_w);
-    CUDA_CHECK(cudaGetLastError());
+    col2im_kernel<<<blocks, threads, 0, stream>>>(d_input_col, d_output,
+                                                  N,C,H,W,F,pad,stride,out_h,out_w);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA col2im_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void leaky_relu_host(float* d_data, int size, float alpha) {
+void leaky_relu_host(float* d_data, int size, float alpha, cudaStream_t stream) {
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
 
-    leaky_relu<<<blocks, threads>>>(d_data, size, alpha);
-    CUDA_CHECK(cudaGetLastError());
+    leaky_relu<<<blocks, threads, 0, stream>>>(d_data, size, alpha);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA leaky_relu launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void leaky_relu_derivative(const float* d_input, float* d_output, int size, float alpha) {
+void leaky_relu_derivative(const float* d_input, float* d_output, int size, float alpha, cudaStream_t stream) {
     int blockSize = 256;
     int gridSize = (size + blockSize - 1) / blockSize;
-    leaky_relu_derivative_kernel<<<gridSize, blockSize>>>(d_input, d_output, size, alpha);
-    CUDA_CHECK(cudaGetLastError());
+    leaky_relu_derivative_kernel<<<gridSize, blockSize, 0, stream>>>(d_input, d_output, size, alpha);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA leaky_relu_derivative launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void add_bias_per_filter(float* Z, const float* b, int N, int K, int out_hw) {
+void add_bias_per_filter(float* Z, const float* b, int N, int K, int out_hw, cudaStream_t stream) {
     int total = N * K * out_hw;
     int threads = 256;
     int blocks = (total + threads - 1) / threads;
-    add_bias_per_filter_kernel<<<blocks, threads, 0, 0>>>(Z, b, N, K, out_hw);
-    CUDA_CHECK(cudaGetLastError());
+    add_bias_per_filter_kernel<<<blocks, threads, 0, stream>>>(Z, b, N, K, out_hw);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA add_bias_per_filter launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void add_inplace(float* dst, const float* src, int size) {
+void add_inplace(float* dst, const float* src, int size, cudaStream_t stream) {
     int threads = 256;
     int blocks = (size + threads - 1) / threads;
-    add_inplace_kernel<<<blocks, threads, 0, 0>>>(dst, src, size);
-    CUDA_CHECK(cudaGetLastError());
+    add_inplace_kernel<<<blocks, threads, 0, stream>>>(dst, src, size);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA add_inplace launch failed: " << cudaGetErrorString(err) << std::endl;
+        exit(EXIT_FAILURE);
+    }
 }
 
-void compute_bias_grad(const float* delta, float* grad_bias, int N, int K, int out_hw) {
-    int threads = 256;
-    int blocks = (K + threads - 1) / threads;
-    compute_bias_grad_kernel<<<blocks, threads, 0, 0>>>(delta, grad_bias, N, K, out_hw);
-    CUDA_CHECK(cudaGetLastError());
+void compute_bias_grad(const float* delta, float* grad_bias, int N, int K, int out_hw, cudaStream_t stream) {
+    const int total_work = N * out_hw;
+
+    if (total_work <= 1024) {
+        int threads = std::min(256, K);
+        int blocks = (K + threads - 1) / threads;
+        compute_bias_grad_kernel<<<blocks, threads, 0, stream>>>(delta, grad_bias, N, K, out_hw);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA compute_bias_grad_kernel launch failed: " << cudaGetErrorString(err) << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        int threads = std::min(512, total_work);
+        threads = ((threads + 31) / 32) * 32;  // round up to warp multiple
+        size_t shared_mem = threads * sizeof(float);
+
+        compute_bias_grad_kernel_shared<<<K, threads, shared_mem, stream>>>(delta, grad_bias, N, K, out_hw);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA compute_bias_grad_kernel_shared launch failed: " << cudaGetErrorString(err) << std::endl;
+            exit(EXIT_FAILURE);
+        }
+    }
 }

@@ -12,8 +12,7 @@ Conv_CUDA::Conv_CUDA(int in_channels, int in_H, int in_W,
                      int num_kernels, int filter_size,
                      int stride_, int padding_,
                      float learning_rate_, int batch_size_, int time_step_,
-                     float bias)
-{
+                     float bias) {
     this->C = in_channels;
     this->H = in_H;
     this->W = in_W;
@@ -29,14 +28,14 @@ Conv_CUDA::Conv_CUDA(int in_channels, int in_H, int in_W,
     this->W_out = (W + 2 * padding - F) / stride + 1;
     int out_hw = H_out * W_out;
 
-    size_t input_bytes = size_t(batch_size) * C * H * W * sizeof(float);
-    size_t filters_bytes = size_t(K) * C * F * F * sizeof(float);
-    size_t bias_bytes = size_t(K) * sizeof(float);
-    size_t input_col_bytes = size_t(C) * F * F * (batch_size * out_hw) * sizeof(float); 
-    size_t output_col_bytes = size_t(K) * (batch_size * out_hw) * sizeof(float);
-    size_t delta_bytes = output_col_bytes; 
+    size_t input_bytes        = size_t(batch_size) * C * H * W * sizeof(float);
+    size_t filters_bytes      = size_t(K) * C * F * F * sizeof(float);
+    size_t bias_bytes         = size_t(K) * sizeof(float);
+    size_t input_col_bytes    = size_t(C) * F * F * (batch_size * out_hw) * sizeof(float); 
+    size_t output_col_bytes   = size_t(K) * (batch_size * out_hw) * sizeof(float);
+    size_t delta_bytes        = output_col_bytes; 
     size_t grad_filters_bytes = filters_bytes;
-    size_t grad_bias_bytes = bias_bytes;
+    size_t grad_bias_bytes    = bias_bytes;
 
     CUDA_CHECK(cudaMalloc((void**)&d_input, input_bytes));
     CUDA_CHECK(cudaMalloc((void**)&d_output, output_col_bytes)); 
@@ -56,23 +55,51 @@ Conv_CUDA::Conv_CUDA(int in_channels, int in_H, int in_W,
     CUDA_CHECK(cudaMalloc((void**)&d_m_bias, grad_bias_bytes));
     CUDA_CHECK(cudaMalloc((void**)&d_v_bias, grad_bias_bytes));
 
-    CUDA_CHECK(cudaMemset(d_output, 0, output_col_bytes));
-    CUDA_CHECK(cudaMemset(d_input_col, 0, input_col_bytes));
-    CUDA_CHECK(cudaMemset(d_delta, 0, delta_bytes));
-    CUDA_CHECK(cudaMemset(d_grad_filters, 0, grad_filters_bytes));
-    CUDA_CHECK(cudaMemset(d_grad_bias, 0, grad_bias_bytes));
-    CUDA_CHECK(cudaMemset(d_m_filters, 0, grad_filters_bytes));
-    CUDA_CHECK(cudaMemset(d_v_filters, 0, grad_filters_bytes));
-    CUDA_CHECK(cudaMemset(d_m_bias, 0, grad_bias_bytes));
-    CUDA_CHECK(cudaMemset(d_v_bias, 0, grad_bias_bytes));
-
     std::vector<float> h_filters(K * C * F * F);
     std::vector<float> h_bias(K);
-    for (size_t i = 0; i < h_filters.size(); ++i) h_filters[i] = ((double) (rand() % 100))/1000;
-    for (int i = 0; i < K; ++i) h_bias[i] = bias;
+    for (size_t i = 0; i < h_filters.size(); ++i) 
+        h_filters[i] = ((double)(rand() % 100)) / 1000;
+    for (int i = 0; i < K; ++i) 
+        h_bias[i] = bias;
 
-    CUDA_CHECK(cudaMemcpy(d_filters, h_filters.data(), filters_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_bias, h_bias.data(), bias_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaStreamCreate(&stream));
+    CUDA_CHECK(cudaStreamCreate(&s_bias));
+    CUDA_CHECK(cudaStreamCreate(&s_gradW));
+    CUDA_CHECK(cudaStreamCreate(&s_backprop));
+    CUDA_CHECK(cudaStreamCreate(&s_adamW));
+    CUDA_CHECK(cudaStreamCreate(&s_adamB));
+
+    CUDA_CHECK(cudaEventCreate(&ev_bias));
+    CUDA_CHECK(cudaEventCreate(&ev_gradW));
+    CUDA_CHECK(cudaEventCreate(&ev_backprop));
+
+    cudaStream_t s1, s2, s3;
+    CUDA_CHECK(cudaStreamCreate(&s1));
+    CUDA_CHECK(cudaStreamCreate(&s2));
+    CUDA_CHECK(cudaStreamCreate(&s3));
+
+    CUDA_CHECK(cudaMemcpyAsync(d_filters, h_filters.data(), filters_bytes,
+                               cudaMemcpyHostToDevice, s1));
+    CUDA_CHECK(cudaMemcpyAsync(d_bias, h_bias.data(), bias_bytes,
+                               cudaMemcpyHostToDevice, s2));
+
+    CUDA_CHECK(cudaMemsetAsync(d_output, 0, output_col_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_input_col, 0, input_col_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_delta, 0, delta_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_grad_filters, 0, grad_filters_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_grad_bias, 0, grad_bias_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_m_filters, 0, grad_filters_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_v_filters, 0, grad_filters_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_m_bias, 0, grad_bias_bytes, s3));
+    CUDA_CHECK(cudaMemsetAsync(d_v_bias, 0, grad_bias_bytes, s3));
+
+    CUDA_CHECK(cudaStreamSynchronize(s1));
+    CUDA_CHECK(cudaStreamSynchronize(s2));
+    CUDA_CHECK(cudaStreamSynchronize(s3));
+
+    cudaStreamDestroy(s1);
+    cudaStreamDestroy(s2);
+    cudaStreamDestroy(s3);
 }
 
 Conv_CUDA::~Conv_CUDA() {
@@ -90,6 +117,17 @@ Conv_CUDA::~Conv_CUDA() {
     cudaFree(d_v_filters);
     cudaFree(d_m_bias);
     cudaFree(d_v_bias);
+
+    cudaStreamDestroy(stream);
+    cudaStreamDestroy(s_bias);
+    cudaStreamDestroy(s_gradW);
+    cudaStreamDestroy(s_backprop);
+    cudaStreamDestroy(s_adamW);
+    cudaStreamDestroy(s_adamB);
+
+    cudaEventDestroy(ev_bias);
+    cudaEventDestroy(ev_gradW);
+    cudaEventDestroy(ev_backprop);
 }
 
 std::vector<std::vector<float>> Conv_CUDA::get_outputs() {
@@ -100,6 +138,7 @@ std::vector<std::vector<float>> Conv_CUDA::get_outputs() {
     CUDA_CHECK(cudaMemcpy(h_out.data(), d_output, out_bytes, cudaMemcpyDeviceToHost));
 
     std::vector<std::vector<float>> outs(batch_size, std::vector<float>(K * out_hw));
+    #pragma omp parallel for
     for (int n = 0; n < batch_size; ++n) {
         for (int k = 0; k < K; ++k) {
             for (int p = 0; p < out_hw; ++p) {
@@ -145,13 +184,16 @@ void Conv_CUDA::run(const std::vector<std::vector<float>>& inputs) {
 
 void Conv_CUDA::bp(const std::vector<std::vector<float>>& error) {
     int out_hw = H_out * W_out;
-    int cols = this->batch_size * out_hw;
+    int cols   = this->batch_size * out_hw;
+
     if ((int)error.size() != this->batch_size) {
         std::cerr << "Error batch size mismatch in bp()." << std::endl;
         exit(EXIT_FAILURE);
     }
 
     std::vector<float> h_delta(K * cols, 0.0f);
+
+    #pragma omp parallel for
     for (int n = 0; n < this->batch_size; ++n) {
         if ((int)error[n].size() != K * out_hw) {
             std::cerr << "Error inner size mismatch in bp()." << std::endl;
@@ -164,39 +206,62 @@ void Conv_CUDA::bp(const std::vector<std::vector<float>>& error) {
             }
         }
     }
-    CUDA_CHECK(cudaMemcpy(d_delta, h_delta.data(), K * cols * sizeof(float), cudaMemcpyHostToDevice));
 
-    compute_bias_grad(d_delta, d_grad_bias, this->batch_size, K, out_hw);
+    CUDA_CHECK(cudaMemcpyAsync(d_delta, h_delta.data(),
+                               K * cols * sizeof(float),
+                               cudaMemcpyHostToDevice, stream));
 
     int Kc = C * F * F;
-    device_matrix_transpose(d_input_col, d_input_col_T, Kc, cols);
 
-    device_matrix_mul(d_delta, d_input_col_T, d_grad_filters, K, cols, Kc);
+    compute_bias_grad(d_delta, d_grad_bias,
+                      this->batch_size, K, out_hw, s_bias);
+    cudaEventRecord(ev_bias, s_bias);
 
-    device_matrix_transpose(d_filters, d_filters_T, K, Kc); 
-    device_matrix_mul(d_filters_T, d_delta, d_input_col, Kc, K, cols); 
+    device_matrix_transpose(d_input_col, d_input_col_T, Kc, cols, s_gradW);
+    device_matrix_mul(d_delta, d_input_col_T, d_grad_filters,
+                      K, cols, Kc, s_gradW);
+    cudaEventRecord(ev_gradW, s_gradW);
+
+    device_matrix_transpose(d_filters, d_filters_T, K, Kc, s_backprop);
+    device_matrix_mul(d_filters_T, d_delta, d_input_col,
+                      Kc, K, cols, s_backprop);
 
     size_t input_bytes = size_t(batch_size) * C * H * W * sizeof(float);
-    CUDA_CHECK(cudaMemset(d_input, 0, input_bytes));
-    col2im_wrapper(d_input_col, d_input, batch_size, C, H, W, F, padding, stride);
+    CUDA_CHECK(cudaMemsetAsync(d_input, 0, input_bytes, s_backprop));
+    col2im_wrapper(d_input_col, d_input,
+                   batch_size, C, H, W, F, padding, stride, s_backprop);
+    cudaEventRecord(ev_backprop, s_backprop);
+
+    cudaStreamWaitEvent(s_adamB, ev_bias, 0);
+    adam_update(d_bias, d_grad_bias,
+                d_m_bias, d_v_bias,
+                learning_rate, BETA1, BETA2, EPS,
+                ++time_step, K, s_adamB);
+
+    cudaStreamWaitEvent(s_adamW, ev_gradW, 0);
+    adam_update(d_filters, d_grad_filters,
+                d_m_filters, d_v_filters,
+                learning_rate, BETA1, BETA2, EPS,
+                time_step, K * Kc, s_adamW);
+
+    cudaStreamWaitEvent(stream, ev_backprop, 0);
 
     size_t input_size = size_t(batch_size) * C * H * W;
     std::vector<float> h_input(input_size);
-    CUDA_CHECK(cudaMemcpy(h_input.data(), d_input,
-                        input_size * sizeof(float),
-                        cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaMemcpyAsync(h_input.data(), d_input,
+                               input_size * sizeof(float),
+                               cudaMemcpyDeviceToHost, stream));
+
+    cudaStreamSynchronize(stream);
 
     h_input_grad.resize(batch_size);
+    
+    #pragma omp parallel for
     for (int n = 0; n < batch_size; ++n) {
         h_input_grad[n].assign(h_input.begin() + n * (C*H*W),
-                            h_input.begin() + (n+1) * (C*H*W));
+                               h_input.begin() + (n+1) * (C*H*W));
     }
-
-    time_step += 1;
-    int filters_size = K * Kc;
-    int bias_size = K;
-    adam_update(d_filters, d_grad_filters, d_m_filters, d_v_filters, learning_rate, BETA1, BETA2, EPS, time_step, filters_size);
-    adam_update(d_bias, d_grad_bias, d_m_bias, d_v_bias, learning_rate, BETA1, BETA2, EPS, time_step, bias_size);
 }
 
 void Conv_CUDA::resize_batch(int new_batch_size) {

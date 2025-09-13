@@ -11,45 +11,61 @@ float cuda_rand(){
 	return (float)(rand() % 100)/1000 ;
 }
 
-MLP_CUDA::MLP_CUDA(std::vector<int> num_of_neurons, float learning_rate, int batch_size, int time_step, float bias){
+MLP_CUDA::MLP_CUDA(std::vector<int> num_of_neurons,
+                   float learning_rate, int batch_size,
+                   int time_step, float bias) {
     this->num_of_neurons = num_of_neurons;
-    this->learning_rate = learning_rate;
-    this->batch_size = batch_size;
-    this->time_step = time_step;
-    this->bias = bias;
+    this->learning_rate  = learning_rate;
+    this->batch_size     = batch_size;
+    this->time_step      = time_step;
+    this->bias           = bias;
 
     float *input_activations;
     CUDA_CHECK(cudaMalloc(&input_activations, batch_size * num_of_neurons[0] * sizeof(float)));
     activations.push_back(input_activations);
+    
+    CUDA_CHECK(cudaStreamCreate(&s_grad));
+    CUDA_CHECK(cudaStreamCreate(&s_adamA));
+    CUDA_CHECK(cudaStreamCreate(&s_adamB));
 
-    for(int i = 1; i < num_of_neurons.size(); i++){
+    CUDA_CHECK(cudaEventCreate(&ev_grads_done));
+
+    cudaStream_t s_copy, s_zero;
+    CUDA_CHECK(cudaStreamCreate(&s_copy));
+    CUDA_CHECK(cudaStreamCreate(&s_zero));
+
+    for (int i = 1; i < num_of_neurons.size(); i++) {
         int weight_size = num_of_neurons[i-1] * num_of_neurons[i];
-        int bias_size = num_of_neurons[i];
+        int bias_size   = num_of_neurons[i];
 
         float *temp_weight, *temp_bias, *temp_activations, *temp_preactivations;
         float *temp_m_w, *temp_v_w, *temp_m_b, *temp_v_b;
 
         CUDA_CHECK(cudaMalloc(&temp_weight, weight_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_bias, bias_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_m_w, weight_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_v_w, weight_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_m_b, bias_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_v_b, bias_size * sizeof(float)));
-        CUDA_CHECK(cudaMalloc(&temp_activations, batch_size * bias_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_bias,   bias_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_m_w,    weight_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_v_w,    weight_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_m_b,    bias_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_v_b,    bias_size * sizeof(float)));
+        CUDA_CHECK(cudaMalloc(&temp_activations,   batch_size * bias_size * sizeof(float)));
         CUDA_CHECK(cudaMalloc(&temp_preactivations, batch_size * bias_size * sizeof(float)));
 
-        CUDA_CHECK(cudaMemset(temp_m_w, 0, weight_size * sizeof(float)));
-        CUDA_CHECK(cudaMemset(temp_v_w, 0, weight_size * sizeof(float)));
-        CUDA_CHECK(cudaMemset(temp_m_b, 0, bias_size * sizeof(float)));
-        CUDA_CHECK(cudaMemset(temp_v_b, 0, bias_size * sizeof(float)));
+        CUDA_CHECK(cudaMemsetAsync(temp_m_w, 0, weight_size * sizeof(float), s_zero));
+        CUDA_CHECK(cudaMemsetAsync(temp_v_w, 0, weight_size * sizeof(float), s_zero));
+        CUDA_CHECK(cudaMemsetAsync(temp_m_b, 0, bias_size * sizeof(float),   s_zero));
+        CUDA_CHECK(cudaMemsetAsync(temp_v_b, 0, bias_size * sizeof(float),   s_zero));
 
         std::vector<float> h_weights(weight_size);
         std::vector<float> h_biases(bias_size);
-        for(int j=0; j<weight_size; j++) h_weights[j] = (float)cuda_rand();
-        for(int j=0; j<bias_size; j++) h_biases[j] = bias;
+        for (int j = 0; j < weight_size; j++) h_weights[j] = (float)cuda_rand();
+        for (int j = 0; j < bias_size; j++)   h_biases[j]  = bias;
 
-        CUDA_CHECK(cudaMemcpy(temp_weight, h_weights.data(), weight_size*sizeof(float), cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(temp_bias, h_biases.data(), bias_size*sizeof(float), cudaMemcpyHostToDevice));
+        CUDA_CHECK(cudaMemcpyAsync(temp_weight, h_weights.data(),
+                                   weight_size * sizeof(float),
+                                   cudaMemcpyHostToDevice, s_copy));
+        CUDA_CHECK(cudaMemcpyAsync(temp_bias, h_biases.data(),
+                                   bias_size * sizeof(float),
+                                   cudaMemcpyHostToDevice, s_copy));
 
         weights.push_back(temp_weight);
         biases.push_back(temp_bias);
@@ -80,6 +96,11 @@ MLP_CUDA::MLP_CUDA(std::vector<int> num_of_neurons, float learning_rate, int bat
         CUDA_CHECK(cudaMalloc(&d_gradW_buf[l], n_lm1 * n_l * sizeof(float)));
         CUDA_CHECK(cudaMalloc(&d_gradb_buf[l], n_l * sizeof(float)));
     }
+
+    CUDA_CHECK(cudaStreamSynchronize(s_copy));
+    CUDA_CHECK(cudaStreamSynchronize(s_zero));
+    cudaStreamDestroy(s_copy);
+    cudaStreamDestroy(s_zero);
 }
 
 MLP_CUDA::~MLP_CUDA() {
@@ -114,6 +135,11 @@ MLP_CUDA::~MLP_CUDA() {
     adam_second_weight.clear();
     adam_first_bias.clear();
     adam_second_bias.clear();
+
+    cudaStreamDestroy(s_grad);
+    cudaStreamDestroy(s_adamA);
+    cudaStreamDestroy(s_adamB);
+    cudaEventDestroy(ev_grads_done);
 }
 
 std::vector<std::vector<float>> MLP_CUDA::get_outputs(){
@@ -128,6 +154,7 @@ std::vector<std::vector<float>> MLP_CUDA::get_outputs(){
                       cudaMemcpyDeviceToHost));
                       
     std::vector<std::vector<float>> outputs(batch_size, std::vector<float>(output_size));
+    #pragma omp parallel for
     for (int i = 0; i < batch_size; i++) {
         for (int j = 0; j < output_size; j++) {
             outputs[i][j] = static_cast<float>(h_output[i * output_size + j]);
@@ -176,21 +203,23 @@ void MLP_CUDA::bp(const std::vector<std::vector<float>>& error) {
         }
     }
 
-    const int out_size = num_of_neurons[L];
+    int out_size = num_of_neurons[L];
     std::vector<float> h_error(batch_size * out_size, 0.0f);
     for (int b = 0; b < batch_size; b++) {
         const auto& eb = (b < (int)error.size()) ? error[b] : std::vector<float>{};
-        for (int j = 0; j < out_size && j < (int)eb.size(); j++)
+        for (int j = 0; j < out_size && j < (int)eb.size(); j++) {
             h_error[b * out_size + j] = eb[j];
+        }
     }
-    CUDA_CHECK(cudaMemcpy(d_error_buf, h_error.data(),
-                          h_error.size() * sizeof(float),
-                          cudaMemcpyHostToDevice));
+
+    CUDA_CHECK(cudaMemcpyAsync(d_error_buf, h_error.data(),
+                               h_error.size() * sizeof(float),
+                               cudaMemcpyHostToDevice, s_grad));
 
     {
-        const int sz = batch_size * out_size;
-        sigmoid_derivative(activations[L], d_sig_buf, sz);
-        elementwise_multiply(d_error_buf, d_sig_buf, deltas[L], sz);
+        int sz = batch_size * out_size;
+        sigmoid_derivative(activations[L], d_sig_buf, sz, s_grad);
+        elementwise_multiply(d_error_buf, d_sig_buf, deltas[L], sz, s_grad);
     }
 
     for (int l = L - 1; l >= 1; l--) {
@@ -199,66 +228,72 @@ void MLP_CUDA::bp(const std::vector<std::vector<float>>& error) {
 
         float* d_WT = nullptr;
         CUDA_CHECK(cudaMalloc(&d_WT, n_lp1 * n_l * sizeof(float)));
-        device_matrix_transpose(weights[l], d_WT, n_l, n_lp1);
 
+        device_matrix_transpose(weights[l], d_WT, n_l, n_lp1, s_grad);
         device_matrix_mul(deltas[l+1], d_WT, d_tmp_buf,
-                          batch_size, n_lp1, n_l);
+                          batch_size, n_lp1, n_l, s_grad);
 
-        sigmoid_derivative(activations[l], d_sig_buf, batch_size * n_l);
-        elementwise_multiply(d_tmp_buf, d_sig_buf, deltas[l], batch_size * n_l);
+        sigmoid_derivative(activations[l], d_sig_buf, batch_size * n_l, s_grad);
+        elementwise_multiply(d_tmp_buf, d_sig_buf, deltas[l], batch_size * n_l, s_grad);
 
-        CUDA_CHECK(cudaFree(d_WT)); 
+        CUDA_CHECK(cudaFree(d_WT));
     }
 
+    cudaEventRecord(ev_grads_done, s_grad);
+
     ++time_step;
+
+    cudaStreamWaitEvent(s_adamA, ev_grads_done, 0);
+    cudaStreamWaitEvent(s_adamB, ev_grads_done, 0);
+
     for (int l = 1; l <= L; l++) {
         int n_lm1 = num_of_neurons[l - 1];
         int n_l   = num_of_neurons[l];
 
         device_matrix_transpose(activations[l - 1], d_AT_buf[l],
-                                batch_size, n_lm1);
-
+                                batch_size, n_lm1, s_adamA);
         device_matrix_mul(d_AT_buf[l], deltas[l], d_gradW_buf[l],
-                          n_lm1, batch_size, n_l);
-
-        mean_across_batch_reduction(deltas[l], d_gradb_buf[l],
-                                    batch_size, n_l);
-
+                          n_lm1, batch_size, n_l, s_adamA);
         adam_update(weights[l - 1], d_gradW_buf[l],
                     adam_first_weight[l - 1], adam_second_weight[l - 1],
                     learning_rate, BETA1, BETA2, EPS,
-                    time_step, n_lm1 * n_l);
+                    time_step, n_lm1 * n_l, s_adamA);
 
+        mean_across_batch_reduction(deltas[l], d_gradb_buf[l],
+                                    batch_size, n_l, s_adamB);
         adam_update(biases[l - 1], d_gradb_buf[l],
                     adam_first_bias[l - 1], adam_second_bias[l - 1],
                     learning_rate, BETA1, BETA2, EPS,
-                    time_step, n_l);
+                    time_step, n_l, s_adamB);
     }
 
-    float* d_W0T = nullptr;
     int input_dim = num_of_neurons[0];
+    float* d_W0T = nullptr;
     CUDA_CHECK(cudaMalloc(&d_input_buf, batch_size * input_dim * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_W0T, input_dim * num_of_neurons[1] * sizeof(float)));
-    device_matrix_transpose(weights[0], d_W0T, input_dim, num_of_neurons[1]);
 
+    cudaStreamWaitEvent(s_grad, ev_grads_done, 0);
+    device_matrix_transpose(weights[0], d_W0T, input_dim, num_of_neurons[1], s_grad);
     device_matrix_mul(deltas[1], d_W0T, d_input_buf,
-                    batch_size, num_of_neurons[1], input_dim);
-
+                      batch_size, num_of_neurons[1], input_dim, s_grad);
     CUDA_CHECK(cudaFree(d_W0T));
 
-    d_input.resize(batch_size, std::vector<float>(input_dim));
     std::vector<float> h_d_input(batch_size * input_dim);
+    CUDA_CHECK(cudaMemcpyAsync(h_d_input.data(), d_input_buf,
+                               h_d_input.size() * sizeof(float),
+                               cudaMemcpyDeviceToHost, s_grad));
+    cudaStreamSynchronize(s_grad);
 
-    CUDA_CHECK(cudaMemcpy(h_d_input.data(), d_input_buf,
-                        h_d_input.size() * sizeof(float),
-                        cudaMemcpyDeviceToHost));
+    d_input.resize(batch_size, std::vector<float>(input_dim));
 
+    #pragma omp parallel for
     for (int b = 0; b < batch_size; b++) {
         for (int i = 0; i < input_dim; i++) {
             d_input[b][i] = h_d_input[b * input_dim + i];
         }
     }
 }
+
 
 void MLP_CUDA::resize_batch(int new_batch_size) {
     if (new_batch_size == batch_size) return;
