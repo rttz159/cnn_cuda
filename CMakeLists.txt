@@ -36,6 +36,5 @@ target_include_directories(CNN PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(CNN
     PUBLIC
         OpenMP::OpenMP_CXX
-        MPI::MPI_CXX
         CUDA::cudart
 )
