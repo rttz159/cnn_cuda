@@ -333,8 +333,6 @@ __global__ void compute_bias_grad_kernel_shared(const float* delta, float* grad_
     }
 }
 
-/* ===================== Wrappers (stream-aware) ===================== */
-
 void device_matrix_mul(const float *A, const float *B, float *C,
                        int N1, int N2, int N3, cudaStream_t stream)
 {
@@ -354,7 +352,6 @@ void device_matrix_mul(const float *A, const float *B, float *C,
         std::cerr << "MatMul Kernel Launch Error: " << cudaGetErrorString(err) << "\n";
         exit(EXIT_FAILURE);
     }
-    // async: caller decides when to synchronize
 }
 
 void device_matrix_transpose(const float *input, float *output, int rows, int cols, cudaStream_t stream)
