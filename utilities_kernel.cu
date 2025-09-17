@@ -107,23 +107,22 @@ __global__ void kernel_elementwise_multiply(const float* a, const float* b, floa
     }
 }
 
-__global__ void kernel_mean_across_batch_reduction(const float* delta, float* grad_bias, int batch_size, int layer_size) {
-
+__global__ void kernel_mean_across_batch_reduction(const float* __restrict__ delta, float* __restrict__ grad_bias, int batch_size, int layer_size)
+{
     extern __shared__ float sdata[];
     int neuron_idx = blockIdx.x;  
-    int tid = threadIdx.x;      
-    int threads = blockDim.x;
-    float sum = 0.0f;
+    int tid        = threadIdx.x; 
+    int threads    = blockDim.x;
 
+    float sum = 0.0f;
     for (int i = tid; i < batch_size; i += threads) {
-        sum += delta[i * layer_size + neuron_idx];  
+        sum += delta[i * layer_size + neuron_idx];
     }
 
     sdata[tid] = sum;
-
     __syncthreads();
 
-    for (unsigned int s = threads / 2; s > 0; s >>= 1) {
+    for (unsigned int s = threads / 2; s > 32; s >>= 1) {
         if (tid < s) {
             sdata[tid] += sdata[tid + s];
         }
@@ -131,13 +130,18 @@ __global__ void kernel_mean_across_batch_reduction(const float* delta, float* gr
     }
 
     if (tid < 32) {
-    sum += __shfl_down_sync(0xffffffff, sum, 16);
-    sum += __shfl_down_sync(0xffffffff, sum, 8);
-    sum += __shfl_down_sync(0xffffffff, sum, 4);
-    sum += __shfl_down_sync(0xffffffff, sum, 2);
-    sum += __shfl_down_sync(0xffffffff, sum, 1);
+        sum = sdata[tid];  
+
+        sum += __shfl_down_sync(0xffffffff, sum, 16);
+        sum += __shfl_down_sync(0xffffffff, sum, 8);
+        sum += __shfl_down_sync(0xffffffff, sum, 4);
+        sum += __shfl_down_sync(0xffffffff, sum, 2);
+        sum += __shfl_down_sync(0xffffffff, sum, 1);
+
+        if (tid == 0) {
+            grad_bias[neuron_idx] = sum / batch_size;
+        }
     }
-    if (tid == 0) grad_bias[neuron_idx] = sum / batch_size;
 }
 
 __global__ void kernel_adam_update(float* param, const float* grad,
